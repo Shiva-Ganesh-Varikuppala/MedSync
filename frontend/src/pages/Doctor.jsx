@@ -5,6 +5,7 @@ import MedicinePicker from "../components/MedicinePicker";
 import PrescriptionDetail from "../components/PrescriptionDetail";
 
 const FREQUENCIES = [[1, "Once daily"], [2, "Twice daily"], [3, "Three times daily"], [4, "Four times daily"]];
+const PAGE_SIZE = 10;
 const today = () => new Date().toISOString().slice(0, 10);
 const addDays = (d, n) => { const x = new Date(`${d}T00:00:00`); x.setDate(x.getDate() + n); return x.toISOString().slice(0, 10); };
 const newItem = (m) => ({ key: Math.random(), medicine_id: m.medicine_id, label: `${m.name} ${m.strength || ""}`.trim(), dosage: "", frequency_per_day: 1, start_date: today(), end_date: addDays(today(), 6) });
@@ -48,6 +49,12 @@ function Patients({ patient, choose, startRx }) {
     call(`/doctors/patients/${patient.patient_id}/prescriptions`).then((r) => setHistory(r.data)).catch((e) => setError(e.message));
   }, [patient, call]);
 
+  // Compute simple adherence: what % of prescriptions are ACTIVE or DISPENSED (not CANCELLED)
+  const rxTotal = history.length;
+  const rxActive = history.filter((h) => h.status === "ACTIVE" || h.status === "DISPENSED").length;
+  const rxCancelled = history.filter((h) => h.status === "CANCELLED").length;
+  const rxCompleted = history.filter((h) => h.status === "COMPLETED").length;
+
   return (
     <section className="grid">
       <Panel title="Patient registry">
@@ -69,6 +76,17 @@ function Patients({ patient, choose, startRx }) {
       <Panel title={patient ? `History: ${patient.name}` : "Patient history"}>
         {!patient ? <p className="muted">Select a patient on the left to see their prior prescriptions.</p> : (
           <>
+            {rxTotal > 0 && (
+              <div style={{ marginBottom: "1rem", padding: "0.8rem", background: "#f8fbfc", borderRadius: "10px", border: "1px solid #dbe7eb" }}>
+                <p className="eyebrow" style={{ marginBottom: "0.4rem" }}>Prescription Summary</p>
+                <div style={{ display: "flex", gap: "1.2rem", flexWrap: "wrap" }}>
+                  <span>📋 <b>{rxTotal}</b> total</span>
+                  <span style={{ color: "#16743c" }}>✅ <b>{rxActive}</b> active/dispensed</span>
+                  {rxCompleted > 0 && <span style={{ color: "#627d98" }}>🏁 <b>{rxCompleted}</b> completed</span>}
+                  {rxCancelled > 0 && <span style={{ color: "#a61b1b" }}>❌ <b>{rxCancelled}</b> cancelled</span>}
+                </div>
+              </div>
+            )}
             <div className="inline" style={{ marginBottom: "0.8rem" }}>
               <button onClick={startRx}>Write new prescription</button>
             </div>
@@ -170,6 +188,7 @@ function Mine({ setFlash }) {
   const { call } = useAuth();
   const [rows, setRows] = useState([]);
   const [open, setOpen] = useState(null);
+  const [page, setPage] = useState(0);
   const [error, setError] = useState("");
   const load = useCallback(() => call("/doctors/me/prescriptions").then((r) => setRows(r.data)).catch((e) => setError(e.message)), [call]);
   useEffect(() => { load(); }, [load]);
@@ -179,10 +198,14 @@ function Mine({ setFlash }) {
     try { await call(`/prescriptions/${rx.prescription_id}/cancel`, { method: "POST" }); setFlash({ success: `Prescription #${rx.prescription_id} cancelled.` }); setOpen(null); load(); }
     catch (e) { setError(e.message); }
   }
+
+  const totalPages = Math.ceil(rows.length / PAGE_SIZE);
+  const pageRows = rows.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+
   return (
     <Panel title="My prescriptions">
       <Notice error={error} />
-      <List rows={rows} empty="You have not written any prescriptions yet." render={(r) => (
+      <List rows={pageRows} empty="You have not written any prescriptions yet." render={(r) => (
         <>
           <strong>{r.patient_name} — {r.diagnosis}</strong>
           <span>#{r.prescription_id} · {r.prescription_date} · {r.item_count} medicine(s) · {r.status}</span>
@@ -190,6 +213,13 @@ function Mine({ setFlash }) {
           {open === r.prescription_id && <PrescriptionDetail id={r.prescription_id} onCancel={cancel} />}
         </>
       )} />
+      {totalPages > 1 && (
+        <div className="pagination" role="navigation" aria-label="Prescription pages">
+          <button className="secondary" onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page === 0} aria-label="Previous page">← Prev</button>
+          <span className="muted" style={{ padding: "0 0.6rem", lineHeight: "2.4" }}>Page {page + 1} of {totalPages}</span>
+          <button className="secondary" onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))} disabled={page === totalPages - 1} aria-label="Next page">Next →</button>
+        </div>
+      )}
     </Panel>
   );
 }
@@ -240,6 +270,7 @@ function RxNormSearch() {
             placeholder="Search drug or brand (e.g. Amoxicillin, Lisinopril, Metformin, Lipitor)"
             value={term}
             onChange={(e) => setTerm(e.target.value)}
+            aria-label="Search NIH RxNorm drug database"
           />
           <button>{loading ? "Searching..." : "Search RxNorm"}</button>
         </form>

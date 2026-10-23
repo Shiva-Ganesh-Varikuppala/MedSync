@@ -12,3 +12,6 @@
 .badge.MISSED{background:#ffe5e5;color:#a61b1b}
 .badge.DISPENSED{background:#e8f6ed;color:#16743c}
 @media print{body *{visibility:hidden}.print-modal,.print-modal *{visibility:visible}.print-modal-overlay{position:static;background:none;padding:0}.print-modal{max-width:100%;width:100%;box-shadow:none;border:none;padding:0}.no-print{display:none !important}}
+
+.pagination{display:flex;gap:.5rem;align-items:center;margin-top:1rem;flex-wrap:wrap}
+@media(max-width:700px){.dispense-grid{grid-template-columns:1fr}.stats{grid-template-columns:1fr 1fr}.print-modal{padding:1rem}.pagination{justify-content:center}}

@@ -4,6 +4,7 @@ import { List, Notice, Panel } from "../components/ui";
 import MedicinePicker from "../components/MedicinePicker";
 
 const today = () => new Date().toISOString().slice(0, 10);
+const PAGE_SIZE = 8;
 const STATUS_TEXT = { VALID: "In date", EXPIRING_SOON: "Expiring soon", EXPIRED: "Expired" };
 const TABS = [
   ["inventory", "Inventory"],
@@ -87,6 +88,7 @@ function Dispense({ pid, setFlash }) {
   const [loading, setLoading] = useState(false);
   const [dispensing, setDispensing] = useState(false);
   const [error, setError] = useState("");
+  const [dispPage, setDispPage] = useState(0);
 
   const loadPending = useCallback(() => {
     call(`/pharmacies/${pid}/prescriptions/pending${q ? `?q=${encodeURIComponent(q)}` : ""}`)
@@ -214,18 +216,29 @@ function Dispense({ pid, setFlash }) {
           />
         </Panel>
 
-        <Panel title="Recent Dispensations">
-          <List
-            rows={dispensations}
-            empty="No prescriptions have been dispensed by this pharmacy yet."
-            render={(d) => (
-              <>
-                <strong>#{d.prescription_id} · {d.patient_name} <span className="badge">DISPENSED</span></strong>
-                <span>Prescribed by Dr. {d.doctor_name} · Dispensed by {d.dispensed_by_name}</span>
-                <span>{d.dispensed_at?.slice(0, 16).replace("T", " ")} · {d.total_units_dispensed} units dispensed</span>
-              </>
-            )}
-          />
+        <Panel title="Dispensation history">
+          {dispensations.length === 0 ? <p className="muted">No dispensations recorded yet.</p> : (
+            <>
+              <List
+                rows={dispensations.slice(dispPage * PAGE_SIZE, (dispPage + 1) * PAGE_SIZE)}
+                empty="No dispensations recorded yet."
+                render={(d) => (
+                  <>
+                    <strong>{d.patient_name} — {d.diagnosis}</strong>
+                    <span>Rx #{d.prescription_id} · dispensed {d.dispensed_at?.slice(0, 16).replace("T", " ")} by {d.dispensed_by_name}</span>
+                    <span className="muted" style={{ fontSize: "0.82rem" }}>{d.items?.map((i) => `${i.medicine_name} ×${i.quantity_dispensed}`).join(", ")}</span>
+                  </>
+                )}
+              />
+              {Math.ceil(dispensations.length / PAGE_SIZE) > 1 && (
+                <div className="pagination" role="navigation" aria-label="Dispensation pages">
+                  <button className="secondary" onClick={() => setDispPage((p) => Math.max(0, p - 1))} disabled={dispPage === 0} aria-label="Previous page">← Prev</button>
+                  <span className="muted" style={{ padding: "0 0.6rem", lineHeight: "2.4" }}>Page {dispPage + 1} of {Math.ceil(dispensations.length / PAGE_SIZE)}</span>
+                  <button className="secondary" onClick={() => setDispPage((p) => Math.min(Math.ceil(dispensations.length / PAGE_SIZE) - 1, p + 1))} disabled={dispPage === Math.ceil(dispensations.length / PAGE_SIZE) - 1} aria-label="Next page">Next →</button>
+                </div>
+              )}
+            </>
+          )}
         </Panel>
       </section>
     </div>
