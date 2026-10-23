@@ -16,7 +16,7 @@ export default function Doctor() {
   return (
     <>
       <nav className="tabs" role="tablist">
-        {[["patients", "Patients"], ["new", "New prescription"], ["mine", "My prescriptions"]].map(([k, label]) => (
+        {[["patients", "Patients"], ["new", "New prescription"], ["mine", "My prescriptions"], ["rxnorm", "Drug database (RxNorm)"]].map(([k, label]) => (
           <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? "" : "secondary"} onClick={() => { setTab(k); setFlash({}); }}>{label}</button>
         ))}
       </nav>
@@ -25,6 +25,7 @@ export default function Doctor() {
       {tab === "patients" && <Patients patient={patient} choose={(p) => { setPatient(p); }} startRx={() => setTab("new")} />}
       {tab === "new" && <NewPrescription patient={patient} goPatients={() => setTab("patients")} done={(msg) => { setFlash({ success: msg }); setTab("mine"); }} />}
       {tab === "mine" && <Mine setFlash={setFlash} />}
+      {tab === "rxnorm" && <RxNormSearch />}
     </>
   );
 }
@@ -49,24 +50,29 @@ function Patients({ patient, choose, startRx }) {
 
   return (
     <section className="grid">
-      <Panel title="Find a patient">
+      <Panel title="Patient registry">
         <form className="inline" onSubmit={search}>
-          <input placeholder="Name or patient ID (2+ characters)" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Patient search" />
-          <button disabled={q.trim().length < 2}>Search</button>
+          <input required placeholder="Name (2+ letters)" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search patients by name" />
+          <button>Search</button>
         </form>
         <Notice error={error} />
         {rows && <List rows={rows} empty="No patients match." render={(p) => (
           <>
-            <strong>{p.name}</strong><span>ID {p.patient_id} · born {p.date_of_birth} · {p.gender}</span>
-            <button className="secondary" onClick={() => choose(p)}>Select</button>
+            <strong>{p.name}</strong>
+            <span>DOB {p.date_of_birth} · {p.gender || "unspecified"}</span>
+            <button className={patient?.patient_id === p.patient_id ? "" : "secondary"} onClick={() => choose(p)}>
+              {patient?.patient_id === p.patient_id ? "Selected" : "Select patient"}
+            </button>
           </>
         )} />}
       </Panel>
-      <Panel title={patient ? `Your prescriptions for ${patient.name}` : "Patient history"}>
-        {!patient ? <p className="muted">Select a patient to see the prescriptions you wrote for them.</p> : (
+      <Panel title={patient ? `History: ${patient.name}` : "Patient history"}>
+        {!patient ? <p className="muted">Select a patient on the left to see their prior prescriptions.</p> : (
           <>
-            <button onClick={startRx}>Write new prescription</button>
-            <List rows={history} empty="You have not prescribed anything for this patient yet." render={(h) => (
+            <div className="inline" style={{ marginBottom: "0.8rem" }}>
+              <button onClick={startRx}>Write new prescription</button>
+            </div>
+            <List rows={history} empty="No prescriptions recorded for this patient yet." render={(h) => (
               <>
                 <strong>{h.diagnosis}</strong><span>{h.prescription_date} · {h.status}</span>
                 <button className="link" onClick={() => setOpen(open === h.prescription_id ? null : h.prescription_id)}>{open === h.prescription_id ? "Hide" : "Details"}</button>
@@ -117,25 +123,25 @@ function NewPrescription({ patient, goPatients, done }) {
         items: items.map(({ medicine_id, dosage, frequency_per_day, start_date, end_date }) => ({ medicine_id, dosage: dosage.trim(), frequency_per_day, start_date, end_date }))
       } });
       done(`Prescription #${data.prescription_id} created for ${patient.name}. Reminders were scheduled automatically.`);
-    } catch (err) { setError(err.message); } finally { setBusy(false); }
+    } catch (err) { setError(err.message); }
+    finally { setBusy(false); }
   }
 
   return (
     <Panel title={`New prescription for ${patient.name}`}>
       <form className="form" onSubmit={submit}>
-        <label>Diagnosis<input required maxLength={255} value={diagnosis} onChange={(e) => setDiagnosis(e.target.value)} /></label>
+        <label>Diagnosis<input required value={diagnosis} onChange={(e) => setDiagnosis(e.target.value)} /></label>
         <label>Notes (optional)<textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} /></label>
+
         <h3>Medicines</h3>
-        <MedicinePicker onPick={(m) => setItems((xs) => [...xs, newItem(m)])} />
+        <MedicinePicker onPick={(m) => setItems([...items, newItem(m)])} />
         {items.map((x) => (
-          <div className="card item" key={x.key}>
+          <div key={x.key} className="item card">
             <strong>{x.label}</strong>
-            <label>Dosage<input required placeholder="e.g. 1 tablet" value={x.dosage} onChange={(e) => set(x.key, "dosage", e.target.value)} /></label>
-            <label>How often
-              <select value={x.frequency_per_day} onChange={(e) => set(x.key, "frequency_per_day", Number(e.target.value))}>
-                {FREQUENCIES.map(([n, l]) => <option key={n} value={n}>{l}</option>)}
-              </select>
-            </label>
+            <label>Dosage<input required placeholder="e.g. 500 mg, 1 tablet" value={x.dosage} onChange={(e) => set(x.key, "dosage", e.target.value)} /></label>
+            <label>Frequency<select value={x.frequency_per_day} onChange={(e) => set(x.key, "frequency_per_day", Number(e.target.value))}>
+              {FREQUENCIES.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+            </select></label>
             <label>Start<input required type="date" value={x.start_date} min={today()} onChange={(e) => set(x.key, "start_date", e.target.value)} /></label>
             <label>End<input required type="date" value={x.end_date} min={x.start_date} onChange={(e) => set(x.key, "end_date", e.target.value)} /></label>
             <button type="button" className="secondary" onClick={() => setItems((xs) => xs.filter((y) => y.key !== x.key))}>Remove</button>
@@ -185,5 +191,93 @@ function Mine({ setFlash }) {
         </>
       )} />
     </Panel>
+  );
+}
+
+function RxNormSearch() {
+  const { call } = useAuth();
+  const [term, setTerm] = useState("");
+  const [results, setResults] = useState([]);
+  const [selected, setSelected] = useState(null);
+  const [forms, setForms] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  async function handleSearch(e) {
+    e.preventDefault();
+    if (term.trim().length < 2) return;
+    setLoading(true);
+    setError("");
+    setSelected(null);
+    try {
+      const res = await call(`/medicines/external/search?q=${encodeURIComponent(term.trim())}`);
+      setResults(res.data.results || []);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function viewForms(cui, name) {
+    setSelected({ cui, name });
+    try {
+      const res = await call(`/medicines/external/forms?name=${encodeURIComponent(name)}`);
+      setForms(res.data.forms || []);
+    } catch (e) {
+      setForms([]);
+    }
+  }
+
+  return (
+    <div style={{ display: "grid", gap: "1.2rem" }}>
+      <Panel title="NIH RxNorm Clinical Drug Database Explorer">
+        <p className="muted" style={{ fontSize: "0.88rem", marginTop: "-0.3rem" }}>
+          Explore clinical concepts, brand formulations, and standard strengths from the US National Library of Medicine.
+        </p>
+        <form className="inline" onSubmit={handleSearch}>
+          <input
+            placeholder="Search drug or brand (e.g. Amoxicillin, Lisinopril, Metformin, Lipitor)"
+            value={term}
+            onChange={(e) => setTerm(e.target.value)}
+          />
+          <button>{loading ? "Searching..." : "Search RxNorm"}</button>
+        </form>
+        <Notice error={error} />
+      </Panel>
+
+      <section className="grid">
+        <Panel title="Matching Clinical Concepts">
+          <List
+            rows={results}
+            empty={term ? "No concepts found." : "Enter a search term above to look up drugs in the NIH registry."}
+            render={(c) => (
+              <>
+                <strong>{c.name} <span className="badge">RxCUI {c.rxcui}</span></strong>
+                <span>Source: {c.source}</span>
+                <button className="link" onClick={() => viewForms(c.rxcui, c.name)}>View clinical forms</button>
+              </>
+            )}
+          />
+        </Panel>
+
+        <Panel title={selected ? `Clinical Forms for ${selected.name}` : "Clinical Dosage Forms"}>
+          {!selected ? (
+            <p className="muted">Select a drug on the left to inspect official dosage forms and strengths.</p>
+          ) : (
+            <List
+              rows={forms}
+              empty="No specific dosage forms listed."
+              render={(f) => (
+                <>
+                  <strong>{f.name}</strong>
+                  <span>Form: {f.form_type} {f.synonym ? `· Brand: ${f.synonym}` : ""}</span>
+                </>
+              )}
+            />
+          )}
+        </Panel>
+      </section>
+    </div>
   );
 }

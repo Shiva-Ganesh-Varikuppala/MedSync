@@ -12,11 +12,17 @@ export default function Patient() {
   return (
     <>
       <nav className="tabs" role="tablist">
-        {[["today", "Today & reminders"], ["rx", "My prescriptions"]].map(([k, l]) => (
+        {[
+          ["today", "Today & reminders"],
+          ["rx", "My prescriptions"],
+          ["alerts", "Alerts & Notifications"]
+        ].map(([k, l]) => (
           <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? "" : "secondary"} onClick={() => setTab(k)}>{l}</button>
         ))}
       </nav>
-      {tab === "today" ? <Reminders /> : <Prescriptions />}
+      {tab === "today" && <Reminders />}
+      {tab === "rx" && <Prescriptions />}
+      {tab === "alerts" && <PatientNotifications />}
     </>
   );
 }
@@ -43,8 +49,12 @@ function Reminders() {
   const upcoming = all.filter((r) => r.status === "PENDING" && !dueIds.has(r.reminder_id));
   const byDay = upcoming.reduce((acc, r) => { (acc[day(r.scheduled_at)] ||= []).push(r); return acc; }, {});
   const days = Object.keys(byDay).sort().slice(0, 7);
+
   const taken = all.filter((r) => r.status === "TAKEN").length;
   const skipped = all.filter((r) => r.status === "SKIPPED").length;
+  const missed = all.filter((r) => r.status === "MISSED").length;
+  const totalCompletedOrMissed = taken + skipped + missed;
+  const adherence = totalCompletedOrMissed > 0 ? Math.round((taken / totalCompletedOrMissed) * 100) : 100;
 
   return (
     <>
@@ -74,9 +84,17 @@ function Reminders() {
             </div>
           ))}
         </Panel>
-        <Panel title="Your adherence so far">
-          <p className="stat">{taken + skipped ? Math.round((taken / (taken + skipped)) * 100) : 0}%</p>
-          <p className="muted">{taken} taken · {skipped} skipped</p>
+        <Panel title="Medication Adherence">
+          <p className="stat">{totalCompletedOrMissed > 0 ? `${adherence}%` : "100%"}</p>
+          <div style={{ background: "#e7eef0", height: "10px", borderRadius: "99px", overflow: "hidden", margin: "0.6rem 0 1rem" }}>
+            <div style={{ width: `${adherence}%`, background: adherence >= 80 ? "#16743c" : adherence >= 50 ? "#9b5c00" : "#a61b1b", height: "100%" }} />
+          </div>
+          <p className="muted" style={{ fontSize: "0.9rem", margin: "0.2rem 0" }}>
+            ✓ <b>{taken}</b> taken · <b>{skipped}</b> skipped {missed > 0 ? `· ⚠️ ${missed} missed` : ""}
+          </p>
+          <p className="muted" style={{ fontSize: "0.82rem" }}>
+            {adherence >= 85 ? "Excellent medication adherence! Keep it up." : adherence >= 60 ? "Good progress. Try not to miss scheduled doses." : "Adherence needs attention. Speak to your doctor if you experience side effects."}
+          </p>
         </Panel>
       </section>
     </>
@@ -103,12 +121,53 @@ function Prescriptions() {
       <Notice error={error} />
       {rows && <List rows={rows} empty={mode === "active" ? "No active prescriptions." : "No past prescriptions."} render={(p) => (
         <>
-          <strong>{p.diagnosis}</strong>
-          <span>{p.doctor_name} · {p.prescription_date} · {p.status}</span>
-          <button className="link" onClick={() => setOpen(open === p.prescription_id ? null : p.prescription_id)}>{open === p.prescription_id ? "Hide" : "Details"}</button>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <strong>{p.diagnosis || "Prescription course"}</strong>
+            <span className={`badge ${p.status === "DISPENSED" ? "DISPENSED" : p.status === "CANCELLED" ? "EXPIRED" : ""}`}>
+              {p.status}
+            </span>
+          </div>
+          <span>Prescribed by {p.doctor_name} · {p.prescription_date}</span>
+          <button className="link" onClick={() => setOpen(open === p.prescription_id ? null : p.prescription_id)}>
+            {open === p.prescription_id ? "Hide details" : "View details & official slip"}
+          </button>
           {open === p.prescription_id && <PrescriptionDetail id={p.prescription_id} />}
         </>
       )} />}
+    </Panel>
+  );
+}
+
+function PatientNotifications() {
+  const { call } = useAuth();
+  const [items, setItems] = useState([]);
+  const [error, setError] = useState("");
+
+  const load = useCallback(() => {
+    call("/patients/me/notifications").then((r) => setItems(r.data)).catch((e) => setError(e.message));
+  }, [call]);
+
+  useEffect(() => { load(); }, [load]);
+
+  return (
+    <Panel title="Dose Alerts & Notifications Inbox">
+      <Notice error={error} />
+      <List
+        rows={items}
+        empty="No notification alerts have been sent yet. Active reminders will trigger alerts to your registered contact channel."
+        render={(n) => (
+          <>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <strong>{n.title}</strong>
+              <span className="badge">{n.channel}</span>
+            </div>
+            <p style={{ margin: "0.2rem 0", fontSize: "0.9rem" }}>{n.message}</p>
+            <span style={{ fontSize: "0.8rem", color: "#627d98" }}>
+              Delivered to {n.recipient} on {n.sent_at?.slice(0, 16).replace("T", " ")}
+            </span>
+          </>
+        )}
+      />
     </Panel>
   );
 }
