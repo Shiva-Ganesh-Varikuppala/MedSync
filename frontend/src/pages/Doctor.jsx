@@ -90,12 +90,16 @@ function NewPrescription({ patient, goPatients, done }) {
   const [busy, setBusy] = useState(false);
 
   const ids = items.map((i) => i.medicine_id).join(",");
-  // Live interaction check as soon as two or more different medicines are chosen.
+  // Live interaction check including cross-prescription check against patient's active meds
   useEffect(() => {
     const distinct = [...new Set(ids.split(",").filter(Boolean))];
-    if (distinct.length < 2) { setWarnings([]); return; }
-    call(`/interactions/check?medicineIds=${distinct.join(",")}`).then((r) => setWarnings(r.data)).catch(() => setWarnings([]));
-  }, [ids, call]);
+    if (!distinct.length) { setWarnings([]); return; }
+    const pParam = patient?.patient_id ? `&patientId=${patient.patient_id}` : "";
+    if (distinct.length < 2 && !pParam) { setWarnings([]); return; }
+    call(`/interactions/check?medicineIds=${distinct.join(",")}${pParam}`)
+      .then((r) => setWarnings(r.data))
+      .catch(() => setWarnings([]));
+  }, [ids, patient?.patient_id, call]);
 
   if (!patient) return <Panel title="New prescription"><p className="muted">Choose a patient first.</p><button onClick={goPatients}>Find a patient</button></Panel>;
 
@@ -138,7 +142,15 @@ function NewPrescription({ patient, goPatients, done }) {
           </div>
         ))}
         {warnings.map((w) => (
-          <p key={w.interaction_id} className="warning"><b>{w.severity}</b> — {w.medicine_1} + {w.medicine_2}: {w.description}</p>
+          <p key={w.interaction_id} className="warning">
+            <b>{w.severity}</b> {w.is_cross_prescription ? "⚠️ (Cross-Prescription Alert) " : "— "}
+            {w.medicine_1} + {w.medicine_2}: {w.description}
+            {w.is_cross_prescription && w.existing_medication && (
+              <span style={{ display: "block", fontSize: "0.85rem", marginTop: "0.2rem" }}>
+                Patient is actively taking {w.existing_medication.medicine_name} (prescribed by Dr. {w.existing_medication.doctor_name} until {w.existing_medication.end_date})
+              </span>
+            )}
+          </p>
         ))}
         {hasSevere && <p className="warning">A severe interaction is present. Review before prescribing.</p>}
         <Notice error={error} />

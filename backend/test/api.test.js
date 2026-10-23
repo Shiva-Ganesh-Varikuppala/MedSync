@@ -87,11 +87,19 @@ test("medicine list is paged (works on MySQL 8) and search treats % as plain tex
     assert.equal((await call("GET", "/api/medicines/search?q=%25", { as: "doc" })).json.data.length, 0);
 });
 
-test("interaction check finds a pair in either order", async () => {
+test("interaction check finds a pair in either order and detects cross-prescription interactions", async () => {
     assert.equal((await call("GET", "/api/interactions/check?medicineIds=1,3", { as: "doc" })).json.data.length, 1);
     assert.equal((await call("GET", "/api/interactions/check?medicineIds=3,1", { as: "doc" })).json.data.length, 1);
     assert.equal((await call("GET", "/api/interactions/check?medicineIds=5,6", { as: "doc" })).json.data.length, 0);
     assert.equal((await call("GET", "/api/interactions/check?medicineIds=1", { as: "doc" })).status, 400);
+
+    // Cross-prescription check: patient 1 has an active course of medicine 1 (Paracetamol).
+    // Testing only medicine 3 (Ibuprofen) with patientId=1 should detect the cross-prescription clash!
+    const cross = await call("GET", "/api/interactions/check?medicineIds=3&patientId=1", { as: "doc" });
+    assert.equal(cross.status, 200);
+    assert.ok(cross.json.data.length >= 1);
+    assert.equal(cross.json.data[0].is_cross_prescription, true);
+    assert.ok(cross.json.data[0].existing_medication);
 });
 
 let rxId;
@@ -395,4 +403,89 @@ test("pharmacy dispensing: checks stock, rejects insufficient, allocates FEFO, a
     // 10. Dispensations history shows the dispensed prescription
     const history = (await call("GET", "/api/pharmacies/1/dispensations", { as: "staff1" })).json.data;
     assert.ok(history.some(h => h.prescription_id === rxId));
+});
+
+test("notifications & cron: dispatch alerts, track history, and auto-transition overdue reminders to MISSED", async () => {
+    // 1. Get a reminder for patient 1
+    const reminders = (await call("GET", "/api/reminders", { as: "pat1" })).json.data;
+    assert.ok(reminders.length >= 1);
+    const rId = reminders[0].reminder_id;
+
+    // 2. Dispatch reminder test notification
+    const notifyRes = await call("POST", `/api/reminders/${rId}/notify`, {
+        as: "pat1",
+        body: { channels: ["EMAIL"] }
+    });
+    assert.equal(notifyRes.status, 200);
+    assert.equal(notifyRes.json.data[0].status, "SENT");
+    assert.equal(notifyRes.json.data[0].channel, "EMAIL");
+
+    // 3. Patient notification history
+    const notifs = await call("GET", "/api/patients/me/notifications", { as: "pat1" });
+    assert.equal(notifs.status, 200);
+    assert.ok(notifs.json.data.some(n => n.reminder_id === rId));
+
+    // 4. Admin triggers automated cron cycle
+    const cron = await call("POST", "/api/admin/cron/run", { as: "admin" });
+    assert.equal(cron.status, 200);
+    assert.ok(cron.json.data.timestamp);
+
+    // 5. Non-admin cannot run cron
+    assert.equal((await call("POST", "/api/admin/cron/run", { as: "pat1" })).status, 403);
+});
+
+test("enterprise session security: refresh token rotation and theft detection", async () => {
+    // 1. Login returns token and refreshToken
+    const res = await call("POST", "/api/auth/login", {
+        body: { email: "ananya.rao@medsync.dev", password: "Test@12345" }
+    });
+    assert.equal(res.status, 200);
+    assert.ok(res.json.data.token);
+    assert.ok(res.json.data.refreshToken);
+
+    const oldRefresh = res.json.data.refreshToken;
+
+    // 2. Refresh rotates tokens
+    const refreshed = await call("POST", "/api/auth/refresh", {
+        body: { refreshToken: oldRefresh }
+    });
+    assert.equal(refreshed.status, 200);
+    assert.ok(refreshed.json.data.token);
+    assert.ok(refreshed.json.data.refreshToken);
+    const newRefresh = refreshed.json.data.refreshToken;
+    assert.notEqual(oldRefresh, newRefresh);
+
+    // 3. New access token is valid
+    tokens.rotatedDoc = refreshed.json.data.token;
+    const me = await call("GET", "/api/auth/me", { as: "rotatedDoc" });
+    assert.equal(me.status, 200);
+
+    // 4. Reuse detection: using the old already-used token triggers theft detection
+    const reuse = await call("POST", "/api/auth/refresh", {
+        body: { refreshToken: oldRefresh }
+    });
+    assert.equal(reuse.status, 401);
+
+    // 5. Because theft was detected, the entire session family was invalidated
+    const postTheft = await call("POST", "/api/auth/refresh", {
+        body: { refreshToken: newRefresh }
+    });
+    assert.equal(postTheft.status, 401);
+});
+
+test("external drug database: searches NIH RxNorm and fetches clinical forms with fallback", async () => {
+    // 1. Unauthenticated rejected
+    assert.equal((await call("GET", "/api/medicines/external/search?q=aspirin")).status, 401);
+
+    // 2. Doctor searches RxNorm
+    const search = await call("GET", "/api/medicines/external/search?q=aspirin", { as: "doc" });
+    assert.equal(search.status, 200);
+    assert.ok(search.json.data.source);
+    assert.ok(Array.isArray(search.json.data.results));
+
+    // 3. Clinical forms lookup
+    const forms = await call("GET", "/api/medicines/external/forms?name=aspirin", { as: "doc" });
+    assert.equal(forms.status, 200);
+    assert.ok(forms.json.data.source);
+    assert.ok(Array.isArray(forms.json.data.forms));
 });

@@ -4,7 +4,9 @@ const { jwtSecret, cookieName } = require("../config/env");
 const { unauthorized, forbidden } = require("../utils/httpError");
 
 function readToken(req) {
-    if (req.cookies && req.cookies[cookieName]) return req.cookies[cookieName];
+    if (req.cookies && (req.cookies[cookieName] || req.cookies.auth_token)) {
+        return req.cookies[cookieName] || req.cookies.auth_token;
+    }
     const header = req.headers.authorization;
     if (header && header.startsWith("Bearer ")) return header.slice(7);
     return null;
