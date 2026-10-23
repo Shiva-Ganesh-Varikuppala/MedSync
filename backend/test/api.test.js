@@ -337,3 +337,62 @@ test("password change: needs the current password, signs out older tokens, is au
     for (let i = 0; i < 5; i++) await call("PUT", "/api/auth/password", { as: "pwNew", body: { current_password: "nope", new_password: "Another@123" } });
     assert.equal((await call("PUT", "/api/auth/password", { as: "pwNew", body: { current_password: "Newer@123", new_password: "Another@123" } })).status, 429, "throttled after repeated wrong guesses");
 });
+
+test("pharmacy dispensing: checks stock, rejects insufficient, allocates FEFO, and updates status", async () => {
+    // 1. Doctor creates a new prescription for Arjun (pat1)
+    const rx = await call("POST", "/api/prescriptions", {
+        as: "doc",
+        body: {
+            patient_id: 1,
+            prescription_date: inDays(0),
+            items: [{ medicine_id: 2, dosage: "500 mg", frequency_per_day: 2, start_date: inDays(0), end_date: inDays(2) }] // 3 days * 2 = 6 units of medicine 2 (Amoxicillin)
+        }
+    });
+    assert.equal(rx.status, 201);
+    const rxId = rx.json.data.prescription_id;
+
+    // 2. Pending prescriptions list includes rxId for pharmacy 1
+    const pending = (await call("GET", "/api/pharmacies/1/prescriptions/pending", { as: "staff1" })).json.data;
+    assert.ok(pending.some(p => p.prescription_id === rxId));
+
+    // 3. Unauthorized access check: doc and pat cannot access pending
+    assert.equal((await call("GET", "/api/pharmacies/1/prescriptions/pending", { as: "doc" })).status, 403);
+    assert.equal((await call("GET", "/api/pharmacies/1/prescriptions/pending", { as: "staff2" })).status, 403);
+
+    // 4. Add stock for medicine 2 in pharmacy 1:
+    // Add batch with 10 units expiring in 30 days
+    const b1 = await call("POST", "/api/pharmacies/1/batches", {
+        as: "staff1",
+        body: { medicine_id: 2, batch_number: "DISP-1", quantity: 10, expiry_date: inDays(30) }
+    });
+    assert.equal(b1.status, 201);
+
+    // 5. Stock check reports sufficient
+    const check = await call("GET", `/api/pharmacies/1/prescriptions/${rxId}/stock`, { as: "staff1" });
+    assert.equal(check.status, 200);
+    assert.equal(check.json.data.can_dispense, true);
+    assert.equal(check.json.data.items[0].required_quantity, 6);
+
+    // 6. Dispense successfully
+    const disp = await call("POST", `/api/pharmacies/1/prescriptions/${rxId}/dispense`, { as: "staff1" });
+    assert.equal(disp.status, 200);
+    assert.equal(disp.json.data.status, "DISPENSED");
+    assert.equal(disp.json.data.dispensed_items.length, 1);
+    assert.equal(disp.json.data.dispensed_items[0].quantity, 6);
+
+    // 7. Verify prescription details updated
+    const rxDetail = (await call("GET", `/api/prescriptions/${rxId}`, { as: "staff1" })).json.data;
+    assert.equal(rxDetail.status, "DISPENSED");
+    assert.ok(rxDetail.dispensed_at);
+    assert.equal(rxDetail.dispensed_items.length, 1);
+
+    // 8. Cannot dispense again
+    assert.equal((await call("POST", `/api/pharmacies/1/prescriptions/${rxId}/dispense`, { as: "staff1" })).status, 400);
+
+    // 9. Doctor cannot cancel a dispensed prescription
+    assert.equal((await call("POST", `/api/prescriptions/${rxId}/cancel`, { as: "doc" })).status, 400);
+
+    // 10. Dispensations history shows the dispensed prescription
+    const history = (await call("GET", "/api/pharmacies/1/dispensations", { as: "staff1" })).json.data;
+    assert.ok(history.some(h => h.prescription_id === rxId));
+});

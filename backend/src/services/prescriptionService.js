@@ -56,9 +56,15 @@ async function get(id, user) {
     const prescriptionId = toInt(id, "prescriptionId");
     const [headers] = await pool.execute(
         `SELECT pr.prescription_id, pr.doctor_id, pr.patient_id, pr.prescription_date, pr.diagnosis, pr.notes, pr.status,
-                du.name AS doctor_name, pu.name AS patient_name
-           FROM prescriptions pr JOIN doctors d ON d.doctor_id = pr.doctor_id JOIN users du ON du.user_id = d.user_id
-           JOIN patients p ON p.patient_id = pr.patient_id JOIN users pu ON pu.user_id = p.user_id WHERE pr.prescription_id = ?`, [prescriptionId]
+                pr.dispensed_at, pr.dispensed_by, pr.dispensed_pharmacy_id,
+                du.name AS doctor_name, pu.name AS patient_name,
+                ph.name AS dispensed_pharmacy_name, su.name AS dispensed_by_name
+           FROM prescriptions pr
+           JOIN doctors d ON d.doctor_id = pr.doctor_id JOIN users du ON du.user_id = d.user_id
+           JOIN patients p ON p.patient_id = pr.patient_id JOIN users pu ON pu.user_id = p.user_id
+           LEFT JOIN pharmacies ph ON ph.pharmacy_id = pr.dispensed_pharmacy_id
+           LEFT JOIN users su ON su.user_id = pr.dispensed_by
+          WHERE pr.prescription_id = ?`, [prescriptionId]
     );
     const header = headers[0];
     if (!header) throw notFound("Prescription not found");
@@ -66,15 +72,22 @@ async function get(id, user) {
     const allowed = (user.role === "DOCTOR" && header.doctor_id === user.doctorId) || (user.role === "PATIENT" && header.patient_id === user.patientId) || user.role === "PHARMACY_STAFF";
     if (!allowed) throw notFound("Prescription not found");
     const [items] = await pool.execute("SELECT pi.prescription_item_id, pi.medicine_id, m.name AS medicine_name, m.generic_name, pi.dosage, pi.frequency, pi.frequency_per_day, pi.start_date, pi.end_date, pi.instructions FROM prescription_items pi JOIN medicines m ON m.medicine_id = pi.medicine_id WHERE pi.prescription_id = ? ORDER BY pi.prescription_item_id", [prescriptionId]);
-    return { ...header, items };
+    const [dispensedItems] = await pool.execute(
+        `SELECT di.dispensed_item_id, di.prescription_item_id, di.batch_id, di.quantity, di.dispensed_at,
+                mb.batch_number, mb.expiry_date
+           FROM dispensed_items di
+           JOIN medicine_batches mb ON mb.batch_id = di.batch_id
+          WHERE di.prescription_id = ?`, [prescriptionId]
+    );
+    return { ...header, items, dispensed_items: dispensedItems };
 }
 
 // mode: "active" | "past" | "all".
-// "Active" = ACTIVE status and a course that has not ended yet (a course starting tomorrow counts).
+// "Active" = ACTIVE or DISPENSED status and a course that has not ended yet (a course starting tomorrow counts).
 // "Past" = everything else (cancelled, or every course finished).
 async function forPatient(patientId, mode = "all") {
     if (mode === true) mode = "active"; // older callers pass a boolean
-    const activeCond = "pr.status = 'ACTIVE' AND EXISTS (SELECT 1 FROM prescription_items x WHERE x.prescription_id = pr.prescription_id AND x.end_date >= CURDATE())";
+    const activeCond = "pr.status IN ('ACTIVE','DISPENSED') AND EXISTS (SELECT 1 FROM prescription_items x WHERE x.prescription_id = pr.prescription_id AND x.end_date >= CURDATE())";
     const filter = mode === "active" ? ` AND ${activeCond}` : mode === "past" ? ` AND NOT (${activeCond})` : "";
     const [rows] = await pool.execute(
         `SELECT DISTINCT pr.prescription_id, pr.prescription_date, pr.diagnosis, pr.notes, pr.status, du.name AS doctor_name
@@ -102,6 +115,7 @@ async function cancel(id, user, ip) {
         const [rows] = await conn.execute("SELECT status FROM prescriptions WHERE prescription_id = ? AND doctor_id = ? FOR UPDATE", [prescriptionId, user.doctorId]);
         if (!rows.length) throw notFound("Prescription not found");
         if (rows[0].status === "CANCELLED") throw badRequest("Prescription is already cancelled");
+        if (rows[0].status === "DISPENSED") throw badRequest("Cannot cancel a prescription that has already been dispensed");
         await conn.execute("UPDATE prescriptions SET status = 'CANCELLED' WHERE prescription_id = ?", [prescriptionId]);
         await writeAudit({ userId: user.id, action: "PRESCRIPTION_CANCEL", entityType: "prescription", entityId: prescriptionId, ip }, conn);
         return { prescription_id: prescriptionId, status: "CANCELLED" };

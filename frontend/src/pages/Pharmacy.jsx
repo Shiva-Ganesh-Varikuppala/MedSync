@@ -5,7 +5,13 @@ import MedicinePicker from "../components/MedicinePicker";
 
 const today = () => new Date().toISOString().slice(0, 10);
 const STATUS_TEXT = { VALID: "In date", EXPIRING_SOON: "Expiring soon", EXPIRED: "Expired" };
-const TABS = [["inventory", "Inventory"], ["receive", "Receive stock"], ["alerts", "Alerts"], ["catalog", "Medicine catalog"]];
+const TABS = [
+  ["inventory", "Inventory"],
+  ["dispense", "Dispense prescription"],
+  ["receive", "Receive stock"],
+  ["alerts", "Alerts"],
+  ["catalog", "Medicine catalog"]
+];
 
 export default function Pharmacy() {
   const { user } = useAuth();
@@ -20,6 +26,7 @@ export default function Pharmacy() {
       </nav>
       <Notice {...flash} />
       {tab === "inventory" && <Inventory pid={user.pharmacy_id} setFlash={setFlash} />}
+      {tab === "dispense" && <Dispense pid={user.pharmacy_id} setFlash={setFlash} />}
       {tab === "receive" && <Receive pid={user.pharmacy_id} done={(m) => { setFlash({ success: m }); setTab("inventory"); }} />}
       {tab === "alerts" && <Alerts pid={user.pharmacy_id} />}
       {tab === "catalog" && <Catalog setFlash={setFlash} />}
@@ -67,6 +74,161 @@ function Inventory({ pid, setFlash }) {
         </>
       )} />
     </Panel>
+  );
+}
+
+function Dispense({ pid, setFlash }) {
+  const { call } = useAuth();
+  const [q, setQ] = useState("");
+  const [pending, setPending] = useState([]);
+  const [selectedId, setSelectedId] = useState(null);
+  const [stockInfo, setStockInfo] = useState(null);
+  const [dispensations, setDispensations] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [dispensing, setDispensing] = useState(false);
+  const [error, setError] = useState("");
+
+  const loadPending = useCallback(() => {
+    call(`/pharmacies/${pid}/prescriptions/pending${q ? `?q=${encodeURIComponent(q)}` : ""}`)
+      .then((r) => setPending(r.data))
+      .catch((e) => setError(e.message));
+  }, [call, pid, q]);
+
+  const loadDispensations = useCallback(() => {
+    call(`/pharmacies/${pid}/dispensations`)
+      .then((r) => setDispensations(r.data))
+      .catch(() => {});
+  }, [call, pid]);
+
+  useEffect(() => { loadPending(); }, [loadPending]);
+  useEffect(() => { loadDispensations(); }, [loadDispensations]);
+
+  useEffect(() => {
+    if (!selectedId) { setStockInfo(null); return; }
+    setLoading(true);
+    setError("");
+    call(`/pharmacies/${pid}/prescriptions/${selectedId}/stock`)
+      .then((r) => { setStockInfo(r.data); setLoading(false); })
+      .catch((e) => { setError(e.message); setLoading(false); });
+  }, [selectedId, call, pid]);
+
+  async function handleDispense() {
+    if (!stockInfo?.can_dispense) return;
+    setDispensing(true);
+    setError("");
+    try {
+      await call(`/pharmacies/${pid}/prescriptions/${selectedId}/dispense`, { method: "POST", body: {} });
+      setFlash({ success: `Prescription #${selectedId} dispensed successfully! Stock has been deducted.` });
+      setSelectedId(null);
+      setStockInfo(null);
+      loadPending();
+      loadDispensations();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setDispensing(false);
+    }
+  }
+
+  return (
+    <div style={{ display: "grid", gap: "1.2rem" }}>
+      <Notice error={error} />
+
+      {selectedId && stockInfo && (
+        <Panel title={`Prescription #${selectedId} Stock Inspection & Dispense`}>
+          <div style={{ marginBottom: "0.8rem", borderBottom: "1px solid #e7eef0", paddingBottom: "0.6rem" }}>
+            <p style={{ margin: "0.2rem 0" }}>
+              <b>Patient:</b> {stockInfo.prescription.patient_name} · <b>Doctor:</b> {stockInfo.prescription.doctor_name} · <b>Date:</b> {stockInfo.prescription.prescription_date}
+            </p>
+            {stockInfo.prescription.diagnosis && <p style={{ margin: "0.2rem 0" }}><b>Diagnosis:</b> {stockInfo.prescription.diagnosis}</p>}
+          </div>
+
+          <h3>Required Medicines & Inventory Check</h3>
+          <div className="list">
+            {stockInfo.items.map((item) => (
+              <div key={item.prescription_item_id} className="row" style={{ padding: "0.8rem 0" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                  <div>
+                    <strong>{item.medicine_name} {item.strength || ""}</strong>
+                    <p style={{ margin: "0.2rem 0", color: "#627d98", fontSize: "0.85rem" }}>
+                      Dosage: {item.dosage} · Frequency: {item.frequency} ({item.course_days} days)
+                    </p>
+                  </div>
+                  <span className={`badge ${item.is_sufficient ? "" : "EXPIRED"}`}>
+                    {item.is_sufficient ? "Stock available" : "Insufficient stock"}
+                  </span>
+                </div>
+                <div style={{ display: "flex", gap: "1.2rem", fontSize: "0.88rem", marginTop: "0.3rem" }}>
+                  <span>Required: <b>{item.required_quantity}</b> units</span>
+                  <span>In-date available: <b>{item.available_stock}</b> units</span>
+                </div>
+                {item.suggested_batches?.length > 0 && (
+                  <div style={{ background: "#f8fbfc", border: "1px solid #e7eef0", borderRadius: "6px", padding: "0.4rem 0.6rem", marginTop: "0.4rem", fontSize: "0.82rem" }}>
+                    <b>FEFO Batch Allocation:</b>
+                    <ul style={{ margin: "0.2rem 0 0", paddingLeft: "1.2rem" }}>
+                      {item.suggested_batches.map((b) => (
+                        <li key={b.batch_id}>
+                          Batch {b.batch_number} → deduct {b.take} unit(s) (expires {b.expiry_date}, {b.days_until_expiry} days left)
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+
+          <div style={{ marginTop: "1rem", display: "flex", gap: "0.8rem", alignItems: "center" }}>
+            <button disabled={!stockInfo.can_dispense || dispensing} onClick={handleDispense}>
+              {dispensing ? "Processing..." : stockInfo.can_dispense ? "Confirm & Dispense" : "Insufficient Stock to Dispense"}
+            </button>
+            <button className="secondary" onClick={() => setSelectedId(null)}>Close</button>
+          </div>
+        </Panel>
+      )}
+
+      <section className="grid">
+        <Panel title="Pending Prescriptions">
+          <input
+            className="filter"
+            placeholder="Search by Rx # or patient name..."
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            aria-label="Search pending prescriptions"
+          />
+          <List
+            rows={pending}
+            empty={loading ? "Checking prescriptions..." : "No pending prescriptions waiting for fulfillment."}
+            render={(rx) => (
+              <>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <strong>#{rx.prescription_id} · {rx.patient_name}</strong>
+                  <button className="secondary" style={{ padding: "0.35rem 0.6rem", fontSize: "0.8rem" }} onClick={() => setSelectedId(rx.prescription_id)}>
+                    {selectedId === rx.prescription_id ? "Inspecting" : "Check & Dispense"}
+                  </button>
+                </div>
+                <span>Dr. {rx.doctor_name} · {rx.prescription_date} · {rx.item_count} medicine(s)</span>
+                {rx.diagnosis && <span style={{ fontStyle: "italic" }}>"{rx.diagnosis}"</span>}
+              </>
+            )}
+          />
+        </Panel>
+
+        <Panel title="Recent Dispensations">
+          <List
+            rows={dispensations}
+            empty="No prescriptions have been dispensed by this pharmacy yet."
+            render={(d) => (
+              <>
+                <strong>#{d.prescription_id} · {d.patient_name} <span className="badge">DISPENSED</span></strong>
+                <span>Prescribed by Dr. {d.doctor_name} · Dispensed by {d.dispensed_by_name}</span>
+                <span>{d.dispensed_at?.slice(0, 16).replace("T", " ")} · {d.total_units_dispensed} units dispensed</span>
+              </>
+            )}
+          />
+        </Panel>
+      </section>
+    </div>
   );
 }
 
