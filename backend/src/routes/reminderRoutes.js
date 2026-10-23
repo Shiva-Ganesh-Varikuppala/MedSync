@@ -1,0 +1,2 @@
+const express=require("express"),c=require("../controllers/reminderController"),{authenticate,requireRole}=require("../middleware/auth"),asyncHandler=require("../utils/asyncHandler"); const router=express.Router();
+router.use(authenticate,requireRole("PATIENT"));router.post("/",asyncHandler(c.create));router.get("/due",asyncHandler(c.due));router.get("/",asyncHandler(c.list));router.patch("/:reminderId/status",asyncHandler(c.update));router.delete("/:reminderId",asyncHandler(c.remove));module.exports=router;
