@@ -5,6 +5,7 @@
 const fs = require("fs");
 const path = require("path");
 const mysql = require("mysql2/promise");
+const { connectionOptions } = require("../src/config/dbOptions");
 require("dotenv").config({ path: path.join(__dirname, "..", ".env") });
 
 const testDbName = () => process.env.DB_TEST_NAME || `${process.env.DB_NAME}_test`;
@@ -13,11 +14,7 @@ async function setupTestDb() {
     const name = testDbName();
     if (!/_test$/.test(name)) throw new Error(`Refusing to reset "${name}": test database names must end with _test`);
 
-    const conn = await mysql.createConnection({
-        host: process.env.DB_HOST, port: process.env.DB_PORT,
-        user: process.env.DB_USER, password: process.env.DB_PASSWORD,
-        multipleStatements: true
-    });
+    const conn = await mysql.createConnection({ ...connectionOptions(), multipleStatements: true });
     try {
         await conn.query(`DROP DATABASE IF EXISTS \`${name}\`; CREATE DATABASE \`${name}\`; USE \`${name}\`;`);
         const root = path.join(__dirname, "..", "..", "database");

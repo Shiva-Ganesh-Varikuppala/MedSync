@@ -1,11 +1,9 @@
 const mysql = require("mysql2/promise");
 require("dotenv").config();
+const { connectionOptions, timezoneOf } = require("./dbOptions");
 
 const pool = mysql.createPool({
-    host: process.env.DB_HOST,
-    port: process.env.DB_PORT,
-    user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
+    ...connectionOptions(),
     database: process.env.DB_NAME,
     waitForConnections: true,
     connectionLimit: 10,
@@ -14,5 +12,9 @@ const pool = mysql.createPool({
     // JavaScript Date objects, so API output never shifts with time zones.
     dateStrings: true
 });
+
+// A cloud database usually runs in UTC. DB_TIMEZONE (e.g. +05:30) makes NOW() and CURDATE() follow your clinic's time.
+const tz = timezoneOf();
+if (tz) pool.on("connection", (conn) => conn.query(`SET time_zone = '${tz}'`));
 
 module.exports = pool;

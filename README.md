@@ -46,6 +46,8 @@ You need Node 20+ and MySQL 8.
    for f in database/migrations/*.sql; do mysql -u YOUR_DB_USER -p medsync < "$f"; done
    ```
    (Each migration asks for the password. If a migration says something "already exists", it was applied before and you can carry on.)
+
+   Easier: after setting `backend/.env`, run `npm run db:migrate -- --seed` in `backend`. It creates the database, applies every file in order, remembers what it applied, and needs no `mysql` command-line client. If you already ran the files by hand, run `npm run db:migrate -- --baseline` once first.
 2. **Backend.**
    ```bash
    cd backend
@@ -87,6 +89,7 @@ All 37 tests pass on MySQL 8.0 in strict mode (the default on most installs) and
 
 ## More
 
+- `docs/AZURE_DATABASE.md`: moving the database to Azure Database for MySQL, step by step.
 - `docs/SECURITY_CHECKLIST.md`: what is protected, and the known limitations.
 - `docs/DEMO_SCRIPT.md`: a step-by-step script for the final presentation.
 - `backend/README.md`: API reference.
