@@ -1,4 +1,5 @@
 const bcrypt = require("bcryptjs");
+const crypto = require("crypto");
 const jwt = require("jsonwebtoken");
 const pool = require("../config/database");
 const { jwtSecret } = require("../config/env");
@@ -8,8 +9,11 @@ const { toDate, toEnum, toInt, toText } = require("../utils/validate");
 const { withTransaction } = require("../utils/transaction");
 
 const ROLES = ["DOCTOR", "PATIENT", "PHARMACY_STAFF"];
-// Compared against when the email is unknown so "no such user" and "wrong password" take the same time.
 const DUMMY_HASH = bcrypt.hashSync("not-a-real-password", 12);
+
+function hashToken(raw) {
+    return crypto.createHash("sha256").update(String(raw)).digest("hex");
+}
 
 function password(value) {
     if (typeof value !== "string" || value.length < 8 || !/[A-Za-z]/.test(value) || !/\d/.test(value)) {
@@ -25,19 +29,24 @@ function email(value) {
 }
 
 function safeUser(row) {
-    return { user_id: row.user_id, name: row.name, email: row.email, role: row.role, phone: row.phone, ...(row.pharmacy_id ? { pharmacy_id: row.pharmacy_id } : {}) };
+    return {
+        user_id: row.user_id,
+        name: row.name,
+        email: row.email,
+        role: row.role,
+        phone: row.phone,
+        ...(row.pharmacy_id ? { pharmacy_id: row.pharmacy_id } : {})
+    };
 }
 
-// Public registration creates PATIENT accounts only. Doctor and pharmacy-staff
-// accounts need license / employment verification, so an administrator creates
-// them (seed data or SQL) - otherwise anyone could register as a doctor and
-// write prescriptions.
 async function register(input) {
     const role = input.role === undefined ? "PATIENT" : toEnum(input.role, "role", ROLES);
     if (role !== "PATIENT") throw forbidden("Only patient accounts can be self-registered");
     const user = {
-        name: toText(input.name, "name", { max: 100 }), email: email(input.email),
-        password: password(input.password), phone: toText(input.phone, "phone", { max: 20, required: false })
+        name: toText(input.name, "name", { max: 100 }),
+        email: email(input.email),
+        password: password(input.password),
+        phone: toText(input.phone, "phone", { max: 20, required: false })
     };
     const passwordHash = await bcrypt.hash(user.password, 12);
 
@@ -72,14 +81,29 @@ async function register(input) {
 }
 
 function signToken(user) {
-    return jwt.sign({ sub: user.user_id, role: user.role }, jwtSecret, { algorithm: "HS256", expiresIn: process.env.JWT_EXPIRES_IN || "1h" });
+    return jwt.sign({ sub: user.user_id, role: user.role }, jwtSecret, {
+        algorithm: "HS256",
+        expiresIn: process.env.JWT_EXPIRES_IN || "1h"
+    });
 }
 
-async function login(input, ip) {
+async function createRefreshToken(userId, { ip = null, userAgent = null } = {}, conn = pool) {
+    const rawToken = crypto.randomBytes(40).toString("hex");
+    const tokenHash = hashToken(rawToken);
+    await conn.execute(
+        `INSERT INTO refresh_tokens (user_id, token_hash, expires_at, ip_address, user_agent)
+         VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 30 DAY), ?, ?)`,
+        [userId, tokenHash, ip, userAgent ? userAgent.slice(0, 255) : null]
+    );
+    return rawToken;
+}
+
+async function login(input, ip, userAgent = null) {
     const userEmail = email(input.email);
     if (typeof input.password !== "string" || !input.password) throw unauthorized("Invalid email or password");
     const [rows] = await pool.execute(
-        "SELECT u.user_id, u.name, u.email, u.password_hash, u.role, u.phone, u.is_active, ps.pharmacy_id FROM users u LEFT JOIN pharmacy_staff ps ON ps.user_id = u.user_id WHERE u.email = ?", [userEmail]
+        "SELECT u.user_id, u.name, u.email, u.password_hash, u.role, u.phone, u.is_active, ps.pharmacy_id FROM users u LEFT JOIN pharmacy_staff ps ON ps.user_id = u.user_id WHERE u.email = ?",
+        [userEmail]
     );
     const user = rows[0];
     const passwordOk = await bcrypt.compare(input.password, user ? user.password_hash : DUMMY_HASH);
@@ -88,10 +112,104 @@ async function login(input, ip) {
         throw unauthorized("Invalid email or password");
     }
     await writeAudit({ userId: user.user_id, action: "LOGIN", entityType: "user", entityId: user.user_id, ip }).catch(() => {});
-    return { token: signToken(user), user: safeUser(user) };
+
+    const refreshToken = await createRefreshToken(user.user_id, { ip, userAgent });
+
+    return {
+        token: signToken(user),
+        refreshToken,
+        user: safeUser(user)
+    };
 }
 
-// The signed-in user's own details, including the role-specific profile.
+async function rotateRefreshToken(rawToken, { ip = null, userAgent = null } = {}) {
+    if (!rawToken || typeof rawToken !== "string") throw unauthorized("Refresh token is required");
+    const tokenHash = hashToken(rawToken);
+
+    return withTransaction(async (conn) => {
+        const [rows] = await conn.execute(
+            `SELECT token_id, user_id, expires_at, revoked_at, replaced_by_hash
+               FROM refresh_tokens
+              WHERE token_hash = ?
+              FOR UPDATE`,
+            [tokenHash]
+        );
+
+        if (!rows.length) throw unauthorized("Invalid refresh token");
+        const tok = rows[0];
+
+        // Token reuse / theft detection: if an already revoked token is used, terminate all user sessions
+        if (tok.revoked_at) {
+            await conn.execute(
+                "UPDATE refresh_tokens SET revoked_at = NOW() WHERE user_id = ? AND revoked_at IS NULL",
+                [tok.user_id]
+            );
+            await conn.commit();
+            await writeAudit({
+                userId: tok.user_id,
+                action: "TOKEN_THEFT_DETECTED",
+                entityType: "user",
+                entityId: tok.user_id,
+                details: { token_id: tok.token_id },
+                ip
+            }).catch(() => {});
+            throw unauthorized("Compromised session detected; please sign in again");
+        }
+
+        if (new Date(tok.expires_at) < new Date()) {
+            throw unauthorized("Refresh token expired");
+        }
+
+        const [users] = await conn.execute(
+            `SELECT u.user_id, u.name, u.email, u.role, u.phone, u.is_active, ps.pharmacy_id
+               FROM users u
+               LEFT JOIN pharmacy_staff ps ON ps.user_id = u.user_id
+              WHERE u.user_id = ? AND u.is_active = 1`,
+            [tok.user_id]
+        );
+        if (!users.length) throw unauthorized("User is deactivated or not found");
+        const user = users[0];
+
+        const newAccessToken = signToken(user);
+        const newRefreshToken = crypto.randomBytes(40).toString("hex");
+        const newHash = hashToken(newRefreshToken);
+
+        await conn.execute(
+            `UPDATE refresh_tokens SET revoked_at = NOW(), replaced_by_hash = ? WHERE token_id = ?`,
+            [newHash, tok.token_id]
+        );
+
+        await conn.execute(
+            `INSERT INTO refresh_tokens (user_id, token_hash, expires_at, ip_address, user_agent)
+             VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 30 DAY), ?, ?)`,
+            [user.user_id, newHash, ip, userAgent ? userAgent.slice(0, 255) : null]
+        );
+
+        await writeAudit({
+            userId: user.user_id,
+            action: "TOKEN_REFRESH",
+            entityType: "user",
+            entityId: user.user_id,
+            ip
+        }, conn).catch(() => {});
+
+        return {
+            token: newAccessToken,
+            refreshToken: newRefreshToken,
+            user: safeUser(user)
+        };
+    });
+}
+
+async function revokeRefreshToken(rawToken, userId) {
+    if (!rawToken) return;
+    const tokenHash = hashToken(rawToken);
+    await pool.execute(
+        `UPDATE refresh_tokens SET revoked_at = NOW() WHERE token_hash = ? AND user_id = ?`,
+        [tokenHash, userId]
+    );
+}
+
 async function getMe(userId) {
     const [rows] = await pool.execute(
         `SELECT u.user_id, u.name, u.email, u.role, u.phone, ps.pharmacy_id,
@@ -103,7 +221,8 @@ async function getMe(userId) {
            LEFT JOIN doctors d ON d.user_id = u.user_id
            LEFT JOIN pharmacy_staff ps ON ps.user_id = u.user_id
            LEFT JOIN pharmacies ph ON ph.pharmacy_id = ps.pharmacy_id
-          WHERE u.user_id = ? AND u.is_active = 1`, [userId]
+          WHERE u.user_id = ? AND u.is_active = 1`,
+        [userId]
     );
     if (!rows.length) throw unauthorized();
     const r = rows[0];
@@ -114,8 +233,6 @@ async function getMe(userId) {
     return user;
 }
 
-// Everyone may edit their own name and phone; patients may also edit gender, address and date of birth.
-// Email, role, licence and pharmacy are changed by an administrator only.
 async function updateProfile(userId, role, input, ip) {
     const name = toText(input.name, "name", { max: 100 });
     const phone = toText(input.phone, "phone", { max: 20, required: false });
@@ -131,7 +248,6 @@ async function updateProfile(userId, role, input, ip) {
     return getMe(userId);
 }
 
-// Needs the current password. All older tokens stop working; a fresh one is returned so this session continues.
 async function changePassword(userId, input, ip) {
     if (typeof input.current_password !== "string" || !input.current_password) throw badRequest("current_password is required");
     const next = password(input.new_password);
@@ -144,10 +260,21 @@ async function changePassword(userId, input, ip) {
         throw badRequest("Current password is incorrect");
     }
     const hash = await bcrypt.hash(next, 12);
-    // Node's clock (not the database's) on purpose: the token's "iat" is also Node's clock.
     await pool.execute("UPDATE users SET password_hash = ?, password_changed_at = FROM_UNIXTIME(?) WHERE user_id = ?", [hash, Math.floor(Date.now() / 1000), userId]);
+    // Revoke all existing refresh tokens on password change
+    await pool.execute("UPDATE refresh_tokens SET revoked_at = NOW() WHERE user_id = ? AND revoked_at IS NULL", [userId]);
     await writeAudit({ userId, action: "PASSWORD_CHANGE", entityType: "user", entityId: userId, ip }).catch(() => {});
     return { token: signToken(user) };
 }
 
-module.exports = { changePassword, checkEmail: email, checkPassword: password, getMe, login, register, updateProfile };
+module.exports = {
+    changePassword,
+    checkEmail: email,
+    checkPassword: password,
+    getMe,
+    login,
+    register,
+    revokeRefreshToken,
+    rotateRefreshToken,
+    updateProfile
+};

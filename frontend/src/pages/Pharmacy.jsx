@@ -1,15 +1,18 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useAuth } from "../auth";
-import { List, Notice, Panel } from "../components/ui";
+import { List, Notice, Panel, Tiles, useGoto } from "../components/ui";
+import Dispense from "./pharmacy/Dispense";
 import MedicinePicker from "../components/MedicinePicker";
+import { BarChart } from "../components/Charts";
 
 const today = () => new Date().toISOString().slice(0, 10);
 const STATUS_TEXT = { VALID: "In date", EXPIRING_SOON: "Expiring soon", EXPIRED: "Expired" };
-const TABS = [["inventory", "Inventory"], ["receive", "Receive stock"], ["alerts", "Alerts"], ["catalog", "Medicine catalog"]];
+const TABS = [["inventory", "Inventory"], ["dispense", "Dispense"], ["history", "Dispensing history"], ["receive", "Receive stock"], ["alerts", "Alerts"], ["catalog", "Medicine catalog"]];
 
 export default function Pharmacy() {
   const { user } = useAuth();
   const [tab, setTab] = useState("inventory");
+  useGoto(setTab);
   const [flash, setFlash] = useState({});
   if (!user.pharmacy_id) return <p className="error">Your account is not linked to a pharmacy. Ask an administrator.</p>;
   const go = (k) => { setTab(k); setFlash({}); };
@@ -20,6 +23,8 @@ export default function Pharmacy() {
       </nav>
       <Notice {...flash} />
       {tab === "inventory" && <Inventory pid={user.pharmacy_id} setFlash={setFlash} />}
+      {tab === "dispense" && <Dispense pid={user.pharmacy_id} setFlash={setFlash} />}
+      {tab === "history" && <DispensingHistory pid={user.pharmacy_id} />}
       {tab === "receive" && <Receive pid={user.pharmacy_id} done={(m) => { setFlash({ success: m }); setTab("inventory"); }} />}
       {tab === "alerts" && <Alerts pid={user.pharmacy_id} />}
       {tab === "catalog" && <Catalog setFlash={setFlash} />}
@@ -30,32 +35,47 @@ export default function Pharmacy() {
 function Inventory({ pid, setFlash }) {
   const { call } = useAuth();
   const [rows, setRows] = useState([]);
+  const [summary, setSummary] = useState(null);   // totals for ALL batches, not just the page on screen
+  const [more, setMore] = useState(false);
+  const [page, setPage] = useState(1);
   const [filter, setFilter] = useState("");
   const [delta, setDelta] = useState({});
   const [error, setError] = useState("");
-  const load = useCallback(() => call(`/pharmacies/${pid}/inventory`).then((r) => setRows(r.data)).catch((e) => setError(e.message)), [call, pid]);
-  useEffect(() => { load(); }, [load]);
+  const url = (p) => `/pharmacies/${pid}/inventory?limit=20&page=${p}${filter.trim() ? `&q=${encodeURIComponent(filter.trim())}` : ""}`;
+  const load = useCallback(() => call(url(1)).then((r) => { setRows(r.data); setMore(r.meta.has_more); setSummary(r.meta.summary); setPage(1); setError(""); }).catch((e) => setError(e.message)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [call, pid, filter]);
+  useEffect(() => { const t = setTimeout(load, 250); return () => clearTimeout(t); }, [load]);
+  const refreshSummary = () => call(`/pharmacies/${pid}/inventory?limit=1`).then((r) => setSummary(r.meta.summary)).catch(() => {});
+  async function loadMore() {
+    try { const r = await call(url(page + 1)); setRows((cur) => cur.concat(r.data)); setMore(r.meta.has_more); setPage(page + 1); }
+    catch (e) { setError(e.message); }
+  }
 
   async function adjust(b) {
     const change = Number(delta[b.batch_id]);
     if (!Number.isInteger(change) || change === 0) { setError("Enter a whole number such as 10 or -5."); return; }
     try {
-      await call(`/batches/${b.batch_id}/quantity`, { method: "PATCH", body: { quantity_change: change } });
-      setDelta({ ...delta, [b.batch_id]: "" }); setError(""); setFlash({ success: `${b.name} batch ${b.batch_number}: stock changed by ${change}.` }); load();
+      const r = await call(`/batches/${b.batch_id}/quantity`, { method: "PATCH", body: { quantity_change: change } });
+      setRows((cur) => cur.map((x) => (x.batch_id === b.batch_id ? { ...x, quantity: r.data.quantity } : x)));   // keep the place in the list
+      setDelta({ ...delta, [b.batch_id]: "" }); setError(""); setFlash({ success: `${b.name} batch ${b.batch_number}: stock changed by ${change}.` }); refreshSummary();
     } catch (e) { setError(e.message); }
   }
   async function remove(b) {
-    if (!window.confirm(`Permanently remove batch ${b.batch_number} of ${b.name}?`)) return;
-    try { await call(`/batches/${b.batch_id}`, { method: "DELETE" }); setFlash({ success: "Batch removed." }); load(); }
+    if (!window.confirm(`Remove batch ${b.batch_number} of ${b.name} from the inventory? Its dispensing history is kept.`)) return;
+    try { await call(`/batches/${b.batch_id}`, { method: "DELETE" }); setRows((cur) => cur.filter((x) => x.batch_id !== b.batch_id)); setFlash({ success: "Batch removed." }); refreshSummary(); }
     catch (e) { setError(e.message); }
   }
-  const shown = rows.filter((r) => `${r.name} ${r.generic_name} ${r.batch_number}`.toLowerCase().includes(filter.toLowerCase()));
+  const chart = summary ? summary.stock_by_medicine.map((m) => ({ label: m.name.length > 9 ? `${m.name.slice(0, 8)}…` : m.name, value: m.units })) : [];
 
   return (
+    <>
+    <Tiles items={[[summary ? summary.batches : "–", "Batches in stock", "purple"], [summary ? summary.expiring_soon : "–", "Expiring soon", "orange"], [summary ? summary.expired : "–", "Expired", "yellow"]]} />
+    <Panel title="Units in stock by medicine"><BarChart data={chart} /></Panel>
     <Panel title="Inventory">
-      <input className="filter" placeholder="Filter by medicine or batch number" value={filter} onChange={(e) => setFilter(e.target.value)} aria-label="Filter inventory" />
+      <input className="filter" placeholder="Search by medicine or batch number" value={filter} onChange={(e) => setFilter(e.target.value)} aria-label="Filter inventory" />
       <Notice error={error} />
-      <List rows={shown} empty="No batches match." render={(b) => (
+      <List rows={rows} empty="No batches match." render={(b) => (
         <>
           <strong>{b.name} <span className={`badge ${b.inventory_status}`}>{STATUS_TEXT[b.inventory_status]}</span></strong>
           <span>Batch {b.batch_number} · {b.quantity} units · expires {b.expiry_date}</span>
@@ -66,7 +86,9 @@ function Inventory({ pid, setFlash }) {
           </div>
         </>
       )} />
+      {more && <button className="secondary" onClick={loadMore}>Load more</button>}
     </Panel>
+    </>
   );
 }
 
@@ -122,6 +144,25 @@ function Alerts({ pid }) {
         </Panel>
       </section>
     </>
+  );
+}
+
+function DispensingHistory({ pid }) {
+  const { call } = useAuth();
+  const [rows, setRows] = useState(null);
+  const [error, setError] = useState("");
+  useEffect(() => { call(`/pharmacies/${pid}/dispensations`).then((r) => setRows(r.data)).catch((e) => setError(e.message)); }, [call, pid]);
+  return (
+    <Panel title="Dispensing history">
+      <Notice error={error} />
+      {rows && <List rows={rows} empty="Nothing has been dispensed yet." render={(d) => (
+        <>
+          <strong>{d.patient_name} <span className="badge">Dispensed</span></strong>
+          <span>Rx #{d.prescription_id} · {d.diagnosis} · {d.doctor_name}</span>
+          <span>{d.total_units_dispensed} units across {d.items_dispensed_count} batch line(s) · by {d.dispensed_by_name} · {String(d.dispensed_at).slice(0, 16).replace("T", " ")}</span>
+        </>
+      )} />}
+    </Panel>
   );
 }
 

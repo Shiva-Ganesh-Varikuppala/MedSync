@@ -3,10 +3,14 @@ const pool = require("../config/database");
 const { jwtSecret, cookieName } = require("../config/env");
 const { unauthorized, forbidden } = require("../utils/httpError");
 
+// An explicit Authorization header wins over the cookie. Cookies are shared by every tab of a
+// browser, so a tab signed in as one role must not be taken over by another tab's cookie.
 function readToken(req) {
-    if (req.cookies && req.cookies[cookieName]) return req.cookies[cookieName];
     const header = req.headers.authorization;
     if (header && header.startsWith("Bearer ")) return header.slice(7);
+    if (req.cookies && (req.cookies[cookieName] || req.cookies.auth_token)) {
+        return req.cookies[cookieName] || req.cookies.auth_token;
+    }
     return null;
 }
 

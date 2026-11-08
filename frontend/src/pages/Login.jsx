@@ -2,6 +2,8 @@ import React, { useState } from "react";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import { Notice } from "../components/ui";
+import Brand from "../components/Brand";
+import ThemeToggle from "../components/ThemeToggle";
 
 // Public sign-up is for patients only. Doctor and pharmacy accounts are created by an administrator.
 export default function Login() {
@@ -34,10 +36,15 @@ export default function Login() {
 
   return (
     <main className="auth">
-      <section>
-        <p className="eyebrow">MEDSYNC</p>
-        <h1>Medication care, in sync.</h1>
-        <p className="muted">Securely manage prescriptions, reminders, and pharmacy stock.</p>
+      <ThemeToggle floating />
+      <section className="hero">
+        <div className="brand"><Brand size={34} /><span>MedSync</span></div>
+        <h1>Medication care, <em>in sync.</em></h1>
+        <p className="lead">Prescriptions, dose reminders and pharmacy stock in one place, so the right medicine reaches the right patient on time.</p>
+        <ul className="chips" aria-label="What MedSync does">
+          <li>Prescriptions</li><li>Dose reminders</li><li>Interaction checks</li><li>Pharmacy stock</li>
+        </ul>
+        <div className="capsule-art" aria-hidden="true"><i className="cap"><b /></i><i className="dot d1" /><i className="dot d2" /><i className="dot d3" /></div>
       </section>
       <form onSubmit={submit} className="card form">
         <h2>{register ? "Create patient account" : "Sign in"}</h2>

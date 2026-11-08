@@ -22,9 +22,9 @@ async function listUsers(query) {
            LEFT JOIN doctors d ON d.user_id = u.user_id
            LEFT JOIN pharmacy_staff ps ON ps.user_id = u.user_id
            LEFT JOIN pharmacies ph ON ph.pharmacy_id = ps.pharmacy_id
-           ${clause} ORDER BY u.created_at DESC, u.user_id DESC LIMIT ? OFFSET ?`, [...params, limit, offset]
+           ${clause} ORDER BY u.created_at DESC, u.user_id DESC LIMIT ? OFFSET ?`, [...params, limit + 1, offset]
     );
-    return { items: rows, page, limit };
+    return { items: rows.slice(0, limit), page, limit, has_more: rows.length > limit };
 }
 
 // Doctor and pharmacy-staff accounts are created here, never through public registration.
@@ -71,6 +71,19 @@ async function setActive(admin, id, value, ip) {
     return { user_id: userId, is_active: value };
 }
 
+async function resetPassword(admin, id, newPassword, ip) {
+    const userId = toInt(id, "userId");
+    if (userId === admin.id) throw forbidden("Use My profile to change your own password");
+    const hash = await bcrypt.hash(checkPassword(newPassword), 12);
+    const [rows] = await pool.execute("SELECT user_id FROM users WHERE user_id = ?", [userId]);
+    if (!rows.length) throw notFound("User not found");
+    await pool.execute("UPDATE users SET password_hash = ?, password_changed_at = FROM_UNIXTIME(?) WHERE user_id = ?", [hash, Math.floor(Date.now() / 1000), userId]);
+    // Signs the person out everywhere: old tokens predate password_changed_at and refresh tokens are revoked.
+    await pool.execute("UPDATE refresh_tokens SET revoked_at = NOW() WHERE user_id = ? AND revoked_at IS NULL", [userId]);
+    await writeAudit({ userId: admin.id, action: "USER_PASSWORD_RESET", entityType: "user", entityId: userId, ip });
+    return { user_id: userId };
+}
+
 async function createPharmacy(admin, input, ip) {
     const p = { name: toText(input.name, "name", { max: 150 }), address: toText(input.address, "address", { max: 255 }), phone: toText(input.phone, "phone", { max: 20 }), email: toText(input.email, "email", { max: 255, required: false }) };
     if (p.email) checkEmail(p.email);
@@ -85,4 +98,4 @@ async function summary() {
     return { doctors: Number(counts.doctors), patients: Number(counts.patients), pharmacy_staff: Number(counts.pharmacy_staff), deactivated: Number(counts.deactivated), pharmacies: p.pharmacies };
 }
 
-module.exports = { createPharmacy, createUser, listUsers, setActive, summary };
+module.exports = { createPharmacy, createUser, listUsers, resetPassword, setActive, summary };

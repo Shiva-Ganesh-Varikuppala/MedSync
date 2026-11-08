@@ -21,7 +21,7 @@ export default function CurrentMedicines({ patientId }) {
       <>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
           <strong>💊 {m.medicine_name}</strong>
-          <span className={`badge ${m.prescribed_by_me ? "DISPENSED" : ""}`}>{m.prescribed_by_me ? "Prescribed by you" : `Dr. ${m.doctor_name}`}</span>
+          <span className={`badge ${m.prescribed_by_me ? "DISPENSED" : ""}`}>{m.prescribed_by_me ? "Prescribed by you" : m.doctor_name}</span>
         </div>
         <span className="muted small">{m.dosage} · {m.frequency} · {m.start_date > today() ? `starts ${m.start_date}, ` : ""}until {m.end_date}</span>
       </>

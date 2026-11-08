@@ -4,7 +4,19 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>MedSync</title>
-    <link rel="icon" href="data:," />
+    <script>
+      // Apply the saved (or system) theme before the page paints, so there is no light flash.
+      try {
+        var t = localStorage.getItem("medsync-theme");
+        if (!t) t = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        document.documentElement.dataset.theme = t;
+      } catch (e) {}
+    </script>
+    <meta name="theme-color" content="#eef0f8" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cg transform='rotate(-40 16 16)'%3E%3Cpath d='M16 3a7 7 0 0 1 7 7v6H9v-6a7 7 0 0 1 7-7z' fill='%237b5cf0'/%3E%3Cpath d='M9 16h14v6a7 7 0 0 1-14 0z' fill='%23ff8a4c'/%3E%3C/g%3E%3C/svg%3E" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Urbanist:wght@500;600;700;800&display=swap" rel="stylesheet" />
   </head>
   <body>
     <div id="root"></div>

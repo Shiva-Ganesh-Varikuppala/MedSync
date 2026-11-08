@@ -1,8 +1,9 @@
 const pool = require("../config/database");
 const { notFound } = require("../utils/httpError");
-const { likeEscape, toInt, toText } = require("../utils/validate");
+const { likeEscape, pagination, toInt, toText } = require("../utils/validate");
 const { writeAudit } = require("../utils/audit");
 const prescriptions = require("../services/prescriptionService");
+const { currentMedicines } = require("../services/patientMedicineService");
 
 async function me(req, res) {
     const [rows] = await pool.execute("SELECT d.doctor_id, u.user_id, u.name, u.email, u.phone, d.license_number, d.specialization FROM doctors d JOIN users u ON u.user_id = d.user_id WHERE d.doctor_id = ?", [req.user.doctorId]);
@@ -13,8 +14,10 @@ async function patients(req, res) {
     // At least 2 characters, so the whole patient registry cannot be listed with an empty search.
     const q = toText(req.query.q, "q", { min: 2, max: 100 });
     const term = `%${likeEscape(q)}%`;
-    const [rows] = await pool.execute("SELECT p.patient_id, u.name, p.date_of_birth, p.gender FROM patients p JOIN users u ON u.user_id = p.user_id WHERE u.is_active = 1 AND (CAST(p.patient_id AS CHAR) = ? OR u.name LIKE ?) ORDER BY u.name LIMIT 50", [q, term]);
-    res.json({ success: true, message: "Patients retrieved successfully", data: rows });
+    const { limit, offset } = pagination(req.query, { defaultLimit: 50, maxLimit: 50 });
+    // one extra row tells us whether a next page exists
+    const [rows] = await pool.query("SELECT p.patient_id, u.name, p.date_of_birth, p.gender FROM patients p JOIN users u ON u.user_id = p.user_id WHERE u.is_active = 1 AND (CAST(p.patient_id AS CHAR) = ? OR u.name LIKE ?) ORDER BY u.name, p.patient_id LIMIT ? OFFSET ?", [q, term, limit + 1, offset]);
+    res.json({ success: true, message: "Patients retrieved successfully", data: rows.slice(0, limit), meta: { has_more: rows.length > limit } });
 }
 async function patient(req, res) {
     const id = toInt(req.params.patientId, "patientId");
@@ -30,5 +33,16 @@ async function patientPrescriptions(req, res) {
     await writeAudit({ userId: req.user.id, action: "PATIENT_HISTORY_VIEW", entityType: "patient", entityId: patientId, ip: req.ip });
     res.json({ success: true, message: "Prescriptions retrieved successfully", data: rows });
 }
+async function patientExists(id) {
+    const [rows] = await pool.execute("SELECT patient_id FROM patients WHERE patient_id = ?", [id]);
+    if (!rows.length) throw notFound("Patient not found");
+}
+async function patientCurrentMedicines(req, res) {
+    const patientId = toInt(req.params.patientId, "patientId");
+    await patientExists(patientId);
+    const data = await currentMedicines(patientId, req.user.doctorId);
+    await writeAudit({ userId: req.user.id, action: "PATIENT_MEDICINES_VIEW", entityType: "patient", entityId: patientId, ip: req.ip });
+    res.json({ success: true, message: "Current medicines retrieved successfully", data });
+}
 async function myPrescriptions(req, res) { res.json({ success: true, message: "Prescriptions retrieved successfully", data: await prescriptions.forDoctor(req.user.doctorId) }); }
-module.exports = { me, myPrescriptions, patient, patientPrescriptions, patients };
+module.exports = { me, myPrescriptions, patient, patientCurrentMedicines, patientPrescriptions, patients };

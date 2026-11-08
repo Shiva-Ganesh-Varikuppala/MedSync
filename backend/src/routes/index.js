@@ -10,6 +10,8 @@ const reminderRoutes = require("./reminderRoutes");
 const pharmacyRoutes = require("./pharmacyRoutes");
 const batchRoutes = require("./batchRoutes");
 const adminRoutes = require("./adminRoutes");
+const appointmentRoutes = require("./appointmentRoutes");
+const searchRoutes = require("./searchRoutes");
 
 const router = express.Router();
 router.use("/health", healthRoutes);
@@ -23,5 +25,7 @@ router.use("/reminders", reminderRoutes);
 router.use("/pharmacies", pharmacyRoutes);
 router.use("/batches", batchRoutes);
 router.use("/admin", adminRoutes);
+router.use("/appointments", appointmentRoutes);
+router.use("/search", searchRoutes);
 
 module.exports = router;

@@ -1,10 +1,18 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useAuth } from "../auth";
-import { List, Notice, Panel } from "../components/ui";
+import { List, Notice, Panel, Tiles, rxStatus, useGoto } from "../components/ui";
 import MedicinePicker from "../components/MedicinePicker";
 import PrescriptionDetail from "../components/PrescriptionDetail";
+import { AreaChart } from "../components/Charts";
+import Appointments from "../components/Appointments";
 
 const FREQUENCIES = [[1, "Once daily"], [2, "Twice daily"], [3, "Three times daily"], [4, "Four times daily"]];
+// Count of prescriptions per month for the last six months, oldest first.
+const perMonth = (rows) => Array.from({ length: 6 }, (_, i) => {
+  const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - (5 - i));
+  const key = d.toLocaleDateString("en-CA").slice(0, 7);
+  return { label: d.toLocaleDateString(undefined, { month: "short" }), value: rows.filter((r) => String(r.prescription_date).slice(0, 7) === key).length };
+});
 const today = () => new Date().toISOString().slice(0, 10);
 const addDays = (d, n) => { const x = new Date(`${d}T00:00:00`); x.setDate(x.getDate() + n); return x.toISOString().slice(0, 10); };
 const newItem = (m) => ({ key: Math.random(), medicine_id: m.medicine_id, label: `${m.name} ${m.strength || ""}`.trim(), dosage: "", frequency_per_day: 1, start_date: today(), end_date: addDays(today(), 6) });
@@ -13,10 +21,11 @@ export default function Doctor() {
   const [tab, setTab] = useState("patients");
   const [patient, setPatient] = useState(null); // chosen patient, shared by the tabs
   const [flash, setFlash] = useState({});
+  useGoto(setTab);
   return (
     <>
       <nav className="tabs" role="tablist">
-        {[["patients", "Patients"], ["new", "New prescription"], ["mine", "My prescriptions"]].map(([k, label]) => (
+        {[["patients", "Patients"], ["new", "New prescription"], ["mine", "My prescriptions"], ["appts", "Appointments"]].map(([k, label]) => (
           <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? "" : "secondary"} onClick={() => { setTab(k); setFlash({}); }}>{label}</button>
         ))}
       </nav>
@@ -25,6 +34,7 @@ export default function Doctor() {
       {tab === "patients" && <Patients patient={patient} choose={(p) => { setPatient(p); }} startRx={() => setTab("new")} />}
       {tab === "new" && <NewPrescription patient={patient} goPatients={() => setTab("patients")} done={(msg) => { setFlash({ success: msg }); setTab("mine"); }} />}
       {tab === "mine" && <Mine setFlash={setFlash} />}
+      {tab === "appts" && <Appointments role="DOCTOR" />}
     </>
   );
 }
@@ -33,13 +43,24 @@ function Patients({ patient, choose, startRx }) {
   const { call } = useAuth();
   const [q, setQ] = useState("");
   const [rows, setRows] = useState(null);
+  const [page, setPage] = useState(1);
+  const [more, setMore] = useState(false);
+  const [asked, setAsked] = useState("");   // the text the shown results are for
   const [history, setHistory] = useState([]);
   const [open, setOpen] = useState(null);
   const [error, setError] = useState("");
 
+  async function fetchPage(text, p) {
+    const r = await call(`/doctors/patients?q=${encodeURIComponent(text)}&limit=20&page=${p}`);
+    return { items: r.data, more: Boolean(r.meta && r.meta.has_more) };
+  }
   async function search(e) {
     e.preventDefault();
-    try { setRows((await call(`/doctors/patients?q=${encodeURIComponent(q.trim())}`)).data); setError(""); }
+    try { const text = q.trim(); const r = await fetchPage(text, 1); setRows(r.items); setMore(r.more); setPage(1); setAsked(text); setError(""); }
+    catch (err) { setError(err.message); }
+  }
+  async function loadMore() {
+    try { const r = await fetchPage(asked, page + 1); setRows((cur) => cur.concat(r.items)); setMore(r.more); setPage(page + 1); }
     catch (err) { setError(err.message); }
   }
   useEffect(() => {
@@ -61,6 +82,7 @@ function Patients({ patient, choose, startRx }) {
             <button className="secondary" onClick={() => choose(p)}>Select</button>
           </>
         )} />}
+        {rows && more && <button className="secondary" onClick={loadMore}>Load more</button>}
       </Panel>
       <Panel title={patient ? `Your prescriptions for ${patient.name}` : "Patient history"}>
         {!patient ? <p className="muted">Select a patient to see the prescriptions you wrote for them.</p> : (
@@ -68,7 +90,7 @@ function Patients({ patient, choose, startRx }) {
             <button onClick={startRx}>Write new prescription</button>
             <List rows={history} empty="You have not prescribed anything for this patient yet." render={(h) => (
               <>
-                <strong>{h.diagnosis}</strong><span>{h.prescription_date} · {h.status}</span>
+                <strong>{h.diagnosis}</strong><span>{h.prescription_date} · {rxStatus(h.status)}</span>
                 <button className="link" onClick={() => setOpen(open === h.prescription_id ? null : h.prescription_id)}>{open === h.prescription_id ? "Hide" : "Details"}</button>
                 {open === h.prescription_id && <PrescriptionDetail id={h.prescription_id} />}
               </>
@@ -162,16 +184,20 @@ function Mine({ setFlash }) {
     catch (e) { setError(e.message); }
   }
   return (
+    <>
+    <Tiles items={[[rows.length, "Prescriptions written", "purple"], [rows.filter((r) => r.status === "ACTIVE").length, "Waiting for the pharmacy", "orange"], [rows.filter((r) => r.status === "DISPENSED").length, "Dispensed", "yellow"]]} />
+    <Panel title="Prescriptions written, last 6 months"><AreaChart data={perMonth(rows)} /></Panel>
     <Panel title="My prescriptions">
       <Notice error={error} />
       <List rows={rows} empty="You have not written any prescriptions yet." render={(r) => (
         <>
           <strong>{r.patient_name} — {r.diagnosis}</strong>
-          <span>#{r.prescription_id} · {r.prescription_date} · {r.item_count} medicine(s) · {r.status}</span>
+          <span>#{r.prescription_id} · {r.prescription_date} · {r.item_count} medicine(s) · {rxStatus(r.status)}</span>
           <button className="link" onClick={() => setOpen(open === r.prescription_id ? null : r.prescription_id)}>{open === r.prescription_id ? "Hide" : "Details"}</button>
           {open === r.prescription_id && <PrescriptionDetail id={r.prescription_id} onCancel={cancel} />}
         </>
       )} />
     </Panel>
+    </>
   );
 }

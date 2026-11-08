@@ -4,6 +4,13 @@
 // A 401 on an authenticated call means the session expired: we tell the app to sign out.
 const BASE_URL = import.meta.env.VITE_API_URL || "/api";
 
+// How many requests are in flight right now. The thin loading bar at the top of the page listens to this.
+let pending = 0;
+const listeners = new Set();
+const notify = () => listeners.forEach((fn) => fn());
+export const subscribePending = (fn) => { listeners.add(fn); return () => listeners.delete(fn); };
+export const getPending = () => pending;
+
 let onUnauthorized = () => {};
 export const setUnauthorizedHandler = (fn) => { onUnauthorized = fn; };
 
@@ -11,7 +18,13 @@ export class ApiError extends Error {
   constructor(message, status) { super(message); this.status = status; }
 }
 
-export async function api(path, { token, method = "GET", body } = {}) {
+export async function api(path, options = {}) {
+  pending += 1; notify();
+  try { return await request(path, options); }
+  finally { pending -= 1; notify(); }
+}
+
+async function request(path, { token, method = "GET", body } = {}) {
   let response;
   try {
     response = await fetch(`${BASE_URL}${path}`, {
