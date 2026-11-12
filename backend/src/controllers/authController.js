@@ -83,6 +83,16 @@ async function changePassword(req, res) {
     }
 }
 
+async function verifyEmail(req, res) {
+    const data = await authService.verifyEmail(req.query.token || req.body?.token);
+    res.json({ success: true, message: "Email verified successfully", data });
+}
+
+async function resendVerification(req, res) {
+    const data = await authService.resendVerification(req.body?.email);
+    res.json({ success: true, message: "If that address is registered and unverified, a new link has been sent", data });
+}
+
 module.exports = {
     changePassword,
     login,
@@ -90,5 +100,7 @@ module.exports = {
     me,
     refresh,
     register,
-    updateMe
+    resendVerification,
+    updateMe,
+    verifyEmail
 };

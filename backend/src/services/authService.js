@@ -3,10 +3,11 @@ const crypto = require("crypto");
 const jwt = require("jsonwebtoken");
 const pool = require("../config/database");
 const { jwtSecret } = require("../config/env");
-const { badRequest, forbidden, unauthorized } = require("../utils/httpError");
+const { badRequest, forbidden, notFound, unauthorized } = require("../utils/httpError");
 const { writeAudit } = require("../utils/audit");
 const { toDate, toEnum, toInt, toText } = require("../utils/validate");
 const { withTransaction } = require("../utils/transaction");
+const messageSender = require("./messageSender");
 
 const ROLES = ["DOCTOR", "PATIENT", "PHARMACY_STAFF"];
 const DUMMY_HASH = bcrypt.hashSync("not-a-real-password", 12);
@@ -54,7 +55,7 @@ async function register(input) {
         const [existing] = await conn.execute("SELECT user_id FROM users WHERE email = ?", [user.email]);
         if (existing.length) throw badRequest("An account with this email already exists");
         const [created] = await conn.execute(
-            "INSERT INTO users (name, email, password_hash, role, phone) VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO users (name, email, password_hash, role, phone, email_verified_at) VALUES (?, ?, ?, ?, ?, NOW())",
             [user.name, user.email, passwordHash, role, user.phone]
         );
         const userId = created.insertId;
@@ -76,7 +77,21 @@ async function register(input) {
             if (!pharmacy.length) throw badRequest("pharmacy_id does not exist");
             await conn.execute("INSERT INTO pharmacy_staff (user_id, pharmacy_id) VALUES (?, ?)", [userId, pharmacyId]);
         }
-        return { user_id: userId, name: user.name, email: user.email, role, phone: user.phone };
+
+        // Generate and store email verification token
+        const rawToken = crypto.randomBytes(32).toString("hex");
+        const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
+        await conn.execute(
+            "INSERT INTO email_verifications (user_id, token_hash, expires_at) VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 24 HOUR))",
+            [userId, tokenHash]
+        );
+
+        // Send verification email (non-fatal)
+        messageSender.sendVerificationEmail(user.email, rawToken).catch((err) => {
+            console.error("[Email Verification] Failed to send verification email:", err.message);
+        });
+
+        return { user_id: userId, name: user.name, email: user.email, role, email_verified: false };
     });
 }
 
@@ -102,7 +117,7 @@ async function login(input, ip, userAgent = null) {
     const userEmail = email(input.email);
     if (typeof input.password !== "string" || !input.password) throw unauthorized("Invalid email or password");
     const [rows] = await pool.execute(
-        "SELECT u.user_id, u.name, u.email, u.password_hash, u.role, u.phone, u.is_active, ps.pharmacy_id FROM users u LEFT JOIN pharmacy_staff ps ON ps.user_id = u.user_id WHERE u.email = ?",
+        "SELECT u.user_id, u.name, u.email, u.password_hash, u.role, u.phone, u.is_active, u.email_verified_at, ps.pharmacy_id FROM users u LEFT JOIN pharmacy_staff ps ON ps.user_id = u.user_id WHERE u.email = ?",
         [userEmail]
     );
     const user = rows[0];
@@ -110,6 +125,9 @@ async function login(input, ip, userAgent = null) {
     if (!user || !user.is_active || !passwordOk) {
         await writeAudit({ userId: user ? user.user_id : null, action: "LOGIN_FAILED", entityType: "user", entityId: user ? user.user_id : null, ip }).catch(() => {});
         throw unauthorized("Invalid email or password");
+    }
+    if (!user.email_verified_at) {
+        throw forbidden("Please verify your email address before signing in. Check your inbox or request a new verification link.");
     }
     await writeAudit({ userId: user.user_id, action: "LOGIN", entityType: "user", entityId: user.user_id, ip }).catch(() => {});
 
@@ -267,6 +285,55 @@ async function changePassword(userId, input, ip) {
     return { token: signToken(user) };
 }
 
+async function verifyEmail(rawToken) {
+    if (!rawToken || typeof rawToken !== "string") throw badRequest("token is required");
+    const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
+    return withTransaction(async (conn) => {
+        const [rows] = await conn.execute(
+            `SELECT ev.id, ev.user_id, ev.expires_at, ev.used_at, u.email
+               FROM email_verifications ev
+               JOIN users u ON u.user_id = ev.user_id
+              WHERE ev.token_hash = ?`,
+            [tokenHash]
+        );
+        if (!rows.length) throw badRequest("This verification link is invalid or has expired.");
+        const ev = rows[0];
+        if (ev.used_at) throw badRequest("This verification link has already been used.");
+        if (new Date(ev.expires_at) < new Date()) throw badRequest("This verification link has expired.");
+        await conn.execute("UPDATE email_verifications SET used_at = NOW() WHERE id = ?", [ev.id]);
+        await conn.execute("UPDATE users SET email_verified_at = NOW() WHERE user_id = ?", [ev.user_id]);
+        await writeAudit({ userId: ev.user_id, action: "EMAIL_VERIFIED", entityType: "user", entityId: ev.user_id }, conn).catch(() => {});
+        return { verified: true, email: ev.email };
+    });
+}
+
+async function resendVerification(emailAddress) {
+    if (!emailAddress || typeof emailAddress !== "string") return { sent: true };
+    let userEmail;
+    try { userEmail = email(emailAddress); } catch (_) { return { sent: true }; }
+    const [rows] = await pool.execute(
+        "SELECT user_id, email, email_verified_at FROM users WHERE email = ? AND is_active = 1",
+        [userEmail]
+    );
+    if (!rows.length || rows[0].email_verified_at) return { sent: true };
+    const user = rows[0];
+    // Delete old unused tokens
+    await pool.execute(
+        "DELETE FROM email_verifications WHERE user_id = ? AND used_at IS NULL",
+        [user.user_id]
+    );
+    const rawToken = crypto.randomBytes(32).toString("hex");
+    const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
+    await pool.execute(
+        "INSERT INTO email_verifications (user_id, token_hash, expires_at) VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 24 HOUR))",
+        [user.user_id, tokenHash]
+    );
+    messageSender.sendVerificationEmail(user.email, rawToken).catch((err) => {
+        console.error("[Email Verification] Failed to send verification email:", err.message);
+    });
+    return { sent: true };
+}
+
 module.exports = {
     changePassword,
     checkEmail: email,
@@ -274,7 +341,9 @@ module.exports = {
     getMe,
     login,
     register,
+    resendVerification,
     revokeRefreshToken,
     rotateRefreshToken,
-    updateProfile
+    updateProfile,
+    verifyEmail
 };

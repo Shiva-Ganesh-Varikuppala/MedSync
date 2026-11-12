@@ -51,7 +51,7 @@ async function createUser(admin, input, ip) {
             if (!ph.length) throw badRequest("pharmacy_id does not exist");
             profile = { pharmacyId };
         }
-        const [created] = await conn.execute("INSERT INTO users (name, email, password_hash, role, phone) VALUES (?, ?, ?, ?, ?)", [name, emailValue, hash, role, phone]);
+        const [created] = await conn.execute("INSERT INTO users (name, email, password_hash, role, phone, email_verified_at) VALUES (?, ?, ?, ?, ?, NOW())", [name, emailValue, hash, role, phone]);
         const userId = created.insertId;
         if (role === "DOCTOR") await conn.execute("INSERT INTO doctors (user_id, license_number, specialization) VALUES (?, ?, ?)", [userId, profile.license, profile.specialization]);
         else await conn.execute("INSERT INTO pharmacy_staff (user_id, pharmacy_id) VALUES (?, ?)", [userId, profile.pharmacyId]);

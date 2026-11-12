@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useAuth } from "./auth";
 import Login from "./pages/Login";
+import VerifyEmail from "./pages/VerifyEmail";
 import Patient from "./pages/Patient";
 import Doctor from "./pages/Doctor";
 import Pharmacy from "./pages/Pharmacy";
@@ -30,7 +31,11 @@ export default function App() {
   const { user, role, signOut } = useAuth();
   const [showProfile, setShowProfile] = useState(false);
   const [patientTab, setPatientTab] = useState("today");
-  if (!user) return <><LoadingBar /><Login /></>;
+  if (!user) {
+    // Handle /verify-email without a full router dependency
+    if (window.location.pathname === "/verify-email") return <><LoadingBar /><VerifyEmail /></>;
+    return <><LoadingBar /><Login /></>;
+  }
   // A search result opens the matching tab. The screen may need a moment to appear if the profile was open.
   const goTo = (tab) => {
     setShowProfile(false);

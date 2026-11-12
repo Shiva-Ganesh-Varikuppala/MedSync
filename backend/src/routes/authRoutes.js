@@ -14,4 +14,7 @@ router.get("/me", authenticate, asyncHandler(controller.me));
 router.put("/me", authenticate, asyncHandler(controller.updateMe));
 router.put("/password", authenticate, checkPasswordThrottle, asyncHandler(controller.changePassword));
 
+router.get("/verify-email", asyncHandler(controller.verifyEmail));
+router.post("/resend-verification", asyncHandler(controller.resendVerification));
+
 module.exports = router;

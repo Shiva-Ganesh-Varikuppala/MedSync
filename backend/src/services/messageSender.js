@@ -74,4 +74,16 @@ async function sendSms({ to, text }) {
     }
 }
 
-module.exports = { emailConfigured, smsConfigured, status, sendEmail, sendSms, normalizePhone };
+async function sendVerificationEmail(toEmail, rawToken) {
+    const appUrl = (process.env.APP_URL || "http://localhost:5173").replace(/\/$/, "");
+    const link = `${appUrl}/verify-email?token=${rawToken}`;
+    const subject = "MedSync — Verify your email address";
+    const text = `Welcome to MedSync!\n\nPlease verify your email by clicking the link below (valid for 24 hours):\n\n${link}\n\nIf you did not create an account, ignore this email.`;
+    if (emailConfigured()) {
+        await sendEmail({ to: toEmail, subject, text });
+    } else {
+        console.log(`[Email Verification] (email not configured) To: ${toEmail} | Link: ${link}`);
+    }
+}
+
+module.exports = { emailConfigured, smsConfigured, status, sendEmail, sendSms, normalizePhone, sendVerificationEmail };

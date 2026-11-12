@@ -12,25 +12,42 @@ export default function Login() {
   const [form, setForm] = useState({});
   const [message, setMessage] = useState({ error: "", success: "" });
   const [loading, setLoading] = useState(false);
+  const [needsVerify, setNeedsVerify] = useState(false);
+  const [resendStatus, setResendStatus] = useState(""); // "" | "sending" | "sent"
   const change = (e) => setForm({ ...form, [e.target.name]: e.target.value });
 
   async function submit(e) {
     e.preventDefault();
     setLoading(true);
     setMessage({ error: "", success: "" });
+    setNeedsVerify(false);
     try {
       if (register) {
         await api("/auth/register", { method: "POST", body: { ...form, role: "PATIENT" } });
         setRegister(false);
-        setMessage({ error: "", success: "Registration successful. Please sign in." });
+        setMessage({ error: "", success: "Registration successful! Please check your email to verify your account before signing in." });
       } else {
         const { data } = await api("/auth/login", { method: "POST", body: { email: form.email, password: form.password } });
         signIn(data);
       }
     } catch (err) {
+      if (err.status === 403 && /verify your email/i.test(err.message)) {
+        setNeedsVerify(true);
+      }
       setMessage({ error: err.message, success: "" });
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleResend() {
+    setResendStatus("sending");
+    try {
+      await api("/auth/resend-verification", { method: "POST", body: { email: form.email } });
+      setResendStatus("sent");
+    } catch {
+      setResendStatus("");
+      setMessage((m) => ({ ...m, error: "Could not resend verification email. Please try again." }));
     }
   }
 
@@ -49,6 +66,20 @@ export default function Login() {
       <form onSubmit={submit} className="card form">
         <h2>{register ? "Create patient account" : "Sign in"}</h2>
         <Notice error={message.error || ""} success={message.success || (!register ? sessionNote : "")} />
+        {needsVerify && resendStatus !== "sent" && (
+          <button
+            type="button"
+            className="link"
+            disabled={resendStatus === "sending"}
+            onClick={handleResend}
+            style={{ marginBottom: "0.5rem" }}
+          >
+            {resendStatus === "sending" ? "Sending…" : "Resend verification link"}
+          </button>
+        )}
+        {resendStatus === "sent" && (
+          <p className="success" role="status">Verification email sent — check your inbox.</p>
+        )}
         {register && (
           <>
             <label>Name<input name="name" required onChange={change} /></label>
@@ -59,7 +90,7 @@ export default function Login() {
         <label>Password<input name="password" type="password" autoComplete={register ? "new-password" : "current-password"} required minLength={register ? 8 : undefined} onChange={change} /></label>
         {register && <p className="muted small">At least 8 characters, with a letter and a number.</p>}
         <button disabled={loading}>{loading ? "Working…" : register ? "Register" : "Sign in"}</button>
-        <button type="button" className="link" onClick={() => { setRegister(!register); setMessage({ error: "", success: "" }); }}>
+        <button type="button" className="link" onClick={() => { setRegister(!register); setMessage({ error: "", success: "" }); setNeedsVerify(false); setResendStatus(""); }}>
           {register ? "Already have an account? Sign in" : "New patient? Create an account"}
         </button>
         {!register && <p className="muted small">Doctors and pharmacy staff: your account is created by an administrator.</p>}
