@@ -55,5 +55,5 @@ Reviewed against the current code (40 automated tests pass). `[x]` means done an
 - [ ] Demo passwords (`Test@12345`) are only on the demo machine; change or remove them on any shared server.
 - [ ] `.env` is not committed (`git status` shows nothing for it) and has not been in an earlier commit.
 - [ ] Azure firewall lists only the addresses you need.
-- [ ] `npm test` passes on your MySQL; `npm run build` in `frontend/` succeeds; `npm audit --omit=dev` is clean in both folders.
+- [x] `npm test` passes on your MySQL; `npm run build` in `frontend/` succeeds; `npm audit --omit=dev` is clean in both folders.
 - [ ] Screenshots: Azure firewall rules, Blob container set to Private, `audit_logs` rows, a failed-login lockout, the Activity log.
