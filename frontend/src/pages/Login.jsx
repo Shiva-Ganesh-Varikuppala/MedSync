@@ -4,6 +4,7 @@ import { useAuth } from "../auth";
 import { Notice } from "../components/ui";
 import Brand from "../components/Brand";
 import ThemeToggle from "../components/ThemeToggle";
+import Capsule3D from "../components/Capsule3D";
 
 // Public sign-up is for patients only. Doctor and pharmacy accounts are created by an administrator.
 export default function Login() {
@@ -61,7 +62,10 @@ export default function Login() {
         <ul className="chips" aria-label="What MedSync does">
           <li>Prescriptions</li><li>Dose reminders</li><li>Interaction checks</li><li>Pharmacy stock</li>
         </ul>
-        <div className="capsule-art" aria-hidden="true"><i className="cap"><b /></i><i className="dot d1" /><i className="dot d2" /><i className="dot d3" /></div>
+        <div className="capsule-art" aria-hidden="true">
+          <Capsule3D width={340} height={140} />
+          <i className="dot d1" /><i className="dot d2" /><i className="dot d3" />
+        </div>
       </section>
       <form onSubmit={submit} className="card form">
         <h2>{register ? "Create patient account" : "Sign in"}</h2>

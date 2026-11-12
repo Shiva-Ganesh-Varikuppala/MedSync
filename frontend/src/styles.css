@@ -290,14 +290,20 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--i
 .chips { list-style: none; display: flex; flex-wrap: wrap; gap: 0.5rem; padding: 0; margin: 1.4rem 0 0; }
 .chips li { font-size: 0.85rem; font-weight: 600; padding: 0.35rem 0.85rem; border-radius: 99px; background: var(--surface); border: 1px solid var(--line); color: var(--indigo-deep); }
 
-.capsule-art { position: relative; height: 150px; margin-top: 2.2rem; }
-.cap { position: absolute; left: 6px; top: 36px; width: 190px; height: 70px; border-radius: 99px; transform: rotate(-18deg); background: linear-gradient(90deg, var(--indigo) 50%, var(--coral) 50%); box-shadow: 0 24px 40px -16px rgba(91, 63, 208, 0.55); animation: float 6s ease-in-out infinite; }
-.cap b { position: absolute; left: 18px; top: 11px; width: 70px; height: 9px; border-radius: 9px; background: rgba(255, 255, 255, 0.4); }
+.capsule-art { position: relative; height: 160px; margin-top: 2.2rem; }
+
+/* 3-D WebGL capsule sits inside capsule-art */
+.capsule-art > div:first-child { pointer-events: none; }
+
+/* floating orbs */
 .dot { position: absolute; border-radius: 50%; background: var(--surface); border: 1px solid var(--line); box-shadow: 0 10px 20px -10px rgba(91, 63, 208, 0.35); }
-.d1 { left: 230px; top: 20px; width: 46px; height: 46px; }
-.d2 { left: 292px; top: 84px; width: 30px; height: 30px; background: var(--tint); }
-.d3 { left: 220px; top: 98px; width: 18px; height: 18px; background: var(--coral); border: 0; }
-@keyframes float { 0%, 100% { transform: rotate(-18deg) translateY(0); } 50% { transform: rotate(-18deg) translateY(-8px); } }
+.d1 { left: 290px; top: 10px; width: 46px; height: 46px; animation: float3d 7s ease-in-out infinite; }
+.d2 { left: 346px; top: 90px; width: 30px; height: 30px; background: var(--tint); animation: float3d 8s ease-in-out 1s infinite; }
+.d3 { left: 278px; top: 112px; width: 18px; height: 18px; background: var(--coral); border: 0; animation: float3d 5s ease-in-out 0.5s infinite; }
+@keyframes float3d {
+  0%,100% { transform: translateY(0px); }
+  50%      { transform: translateY(-10px); }
+}
 
 /* ── Theme toggle ───────────────────────────────────────── */
 
