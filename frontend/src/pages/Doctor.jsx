@@ -194,7 +194,7 @@ function Mine({ setFlash }) {
           <strong>{r.patient_name} — {r.diagnosis}</strong>
           <span>#{r.prescription_id} · {r.prescription_date} · {r.item_count} medicine(s) · {rxStatus(r.status)}</span>
           <button className="link" onClick={() => setOpen(open === r.prescription_id ? null : r.prescription_id)}>{open === r.prescription_id ? "Hide" : "Details"}</button>
-          {open === r.prescription_id && <PrescriptionDetail id={r.prescription_id} onCancel={cancel} />}
+          {open === r.prescription_id && <PrescriptionDetail id={r.prescription_id} onCancel={cancel} canAttach />}
         </>
       )} />
     </Panel>

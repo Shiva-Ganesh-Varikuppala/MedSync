@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useAuth } from "../auth";
-import { List, Notice, Panel, useGoto } from "../components/ui";
-import { Donut } from "../components/Charts";
+import { List, Notice, Panel, Tiles, useGoto } from "../components/ui";
+import { AreaChart, BarChart, Donut } from "../components/Charts";
 
-const TABS = [["users", "Users"], ["create", "Create account"], ["pharmacy", "New pharmacy"], ["automation", "Automation"]];
+const TABS = [["users", "Users"], ["create", "Create account"], ["pharmacy", "New pharmacy"], ["analytics", "Analytics"], ["automation", "Automation"]];
 const ROLE_TEXT = { DOCTOR: "Doctor", PATIENT: "Patient", PHARMACY_STAFF: "Pharmacy staff", ADMIN: "Admin" };
 
 export default function Admin() {
@@ -19,6 +19,7 @@ export default function Admin() {
       <Notice {...flash} />
       {tab === "users" && <Users setFlash={setFlash} />}
       {tab === "create" && <CreateAccount done={(m) => { setFlash({ success: m }); setTab("users"); }} />}
+      {tab === "analytics" && <Analytics />}
       {tab === "automation" && <Automation />}
       {tab === "pharmacy" && <NewPharmacy done={(m) => { setFlash({ success: m }); setTab("create"); }} />}
     </>
@@ -228,5 +229,46 @@ function NewPharmacy({ done }) {
         <button>Create pharmacy</button>
       </form>
     </Panel>
+  );
+}
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const sizeText = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.round(n / 1024)} KB`);
+
+// Numbers computed in the database (SQL views) and drawn here. Read-only.
+function Analytics() {
+  const { call } = useAuth();
+  const [d, setD] = useState(null);
+  const [error, setError] = useState("");
+  useEffect(() => { call("/admin/analytics").then((r) => setD(r.data)).catch((e) => setError(e.message)); }, [call]);
+  if (error) return <Notice error={error} />;
+  if (!d) return <p className="muted">Loading…</p>;
+  const rem = d.reminders, appt = d.appointments;
+  const sum = (o) => Object.values(o).reduce((a, b) => a + b, 0);
+  return (
+    <>
+      <Tiles items={[
+        [d.overall_adherence_pct === null ? "–" : `${d.overall_adherence_pct}%`, "Doses taken on time", "purple"],
+        [sum(rem), "Reminders created", "orange"],
+        [sum(appt), "Appointments", "yellow"],
+        [d.files.count, `Files stored (${sizeText(d.files.bytes)})`, "red"]
+      ]} />
+      <Panel title="Prescriptions written, last 6 months">
+        <AreaChart data={d.prescriptions_by_month.map((m) => ({ label: MONTHS[Number(m.month.slice(5)) - 1], value: m.count }))} />
+      </Panel>
+      <Panel title="Reminder outcomes">
+        <Donut center={sum(rem)} caption="reminders" parts={[
+          { label: "Taken", value: rem.TAKEN || 0, color: "#2fb67c" }, { label: "Skipped", value: rem.SKIPPED || 0, color: "#ffb52e" },
+          { label: "Missed", value: rem.MISSED || 0, color: "#e5484d" }, { label: "Pending", value: rem.PENDING || 0, color: "#7b5cf0" }]} />
+      </Panel>
+      <Panel title="Lowest stock (units that can still be dispensed)">
+        <BarChart data={d.low_stock.map((s) => ({ label: s.medicine_name.slice(0, 7), value: s.units_in_stock }))} />
+        <List rows={d.low_stock} render={(s) => <><strong>{s.medicine_name}</strong><span>{s.pharmacy_name} · {s.units_in_stock} units · nearest expiry {String(s.nearest_expiry).slice(0, 10)}</span></>} empty="No stock recorded." />
+      </Panel>
+      <Panel title="Patients by adherence (lowest first)">
+        <List rows={d.adherence} render={(a) => <><strong>{a.patient_name}</strong><span>{a.adherence_pct === null ? "No answered doses yet" : `${a.adherence_pct}% taken`} · {a.taken} taken, {a.skipped} skipped, {a.missed} missed, {a.pending} pending</span></>} empty="No reminders yet." />
+      </Panel>
+      <p className="muted small">Files are kept in {d.files.storage.driver === "azure-blob" ? `Azure Blob Storage (container ${d.files.storage.container})` : "a local folder (Azure Blob Storage is not configured)"}.</p>
+    </>
   );
 }

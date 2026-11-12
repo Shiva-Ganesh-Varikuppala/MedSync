@@ -2,6 +2,7 @@ const express = require("express");
 const c = require("../controllers/adminController");
 const cronService = require("../services/cronService");
 const messageSender = require("../services/messageSender");
+const analytics = require("../services/analyticsService");
 const pool = require("../config/database");
 const { HttpError, badRequest } = require("../utils/httpError");
 const { authenticate, requireRole } = require("../middleware/auth");
@@ -11,6 +12,7 @@ const router = express.Router();
 router.use(authenticate, requireRole("ADMIN"));
 
 router.get("/summary", asyncHandler(c.summary));
+router.get("/analytics", asyncHandler(async (req, res) => res.json({ success: true, message: "Analytics", data: await analytics.overview() })));
 router.get("/users", asyncHandler(c.listUsers));
 router.post("/users", asyncHandler(c.createUser));
 router.patch("/users/:userId/active", asyncHandler(c.setActive));

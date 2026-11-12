@@ -1,0 +1,21 @@
+sequenceDiagram
+    autonumber
+    actor Doc as Doctor
+    actor Pat as Patient
+    actor Ph as Pharmacy staff
+    participant UI as React app
+    participant API as Express API
+    participant DB as MySQL (Azure)
+    Doc->>UI: write prescription
+    UI->>API: POST /api/prescriptions
+    API->>DB: BEGIN, insert prescription, items, reminders and an audit row, then COMMIT
+    API-->>UI: 201 + interaction warnings
+    Pat->>UI: open "Today"
+    UI->>API: GET /api/reminders
+    API->>DB: reminders of this patient only
+    Pat->>UI: mark dose taken
+    UI->>API: PATCH /api/reminders/:id/status
+    Ph->>UI: open pending prescription
+    UI->>API: POST /api/pharmacies/:id/prescriptions/:rx/dispense
+    API->>DB: BEGIN, lock the batches (FOR UPDATE), take stock oldest-expiry first, record dispensed_items, mark DISPENSED, then COMMIT
+    API-->>UI: 200, or 400 with nothing changed if stock is short

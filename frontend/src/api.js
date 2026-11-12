@@ -24,18 +24,20 @@ export async function api(path, options = {}) {
   finally { pending -= 1; notify(); }
 }
 
-async function request(path, { token, method = "GET", body } = {}) {
+// file: a File/Blob sent as the raw request body (uploads); blob: true returns the response as a Blob (downloads).
+async function request(path, { token, method = "GET", body, file, blob } = {}) {
   let response;
   try {
     response = await fetch(`${BASE_URL}${path}`, {
       method,
-      headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-      ...(body !== undefined ? { body: JSON.stringify(body) } : {})
+      headers: { "Content-Type": file ? file.type : "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      ...(file ? { body: file } : body !== undefined ? { body: JSON.stringify(body) } : {})
     });
   } catch {
     throw new ApiError("Cannot reach the server. Is the backend running?", 0);
   }
   if (response.status === 204) return { success: true, data: null };
+  if (blob && response.ok) return response.blob();
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
     if (response.status === 401 && token) onUnauthorized();

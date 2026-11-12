@@ -409,3 +409,6 @@ circle.chart-grid { stroke-dasharray: none; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
 }
+
+.attachments { margin-top: 0.8rem; }
+.attachments .row { align-items: center; }

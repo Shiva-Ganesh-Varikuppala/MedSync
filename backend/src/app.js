@@ -11,11 +11,22 @@ app.disable("x-powered-by");
 app.set("trust proxy", 1); // so req.ip is the real client address behind a proxy
 
 app.use((req, res, next) => {
-    res.set({
+    // FORCE_HTTPS=true (production, behind a TLS terminator that sets X-Forwarded-Proto): plain http is sent to https.
+    // The health check stays open so load balancer probes keep working.
+    if (process.env.FORCE_HTTPS === "true" && !req.secure && req.path !== "/api/health") {
+        const host = req.headers.host || "";
+        if (!/^[A-Za-z0-9.-]+(:\d+)?$/.test(host)) return res.sendStatus(400);
+        return res.redirect(308, `https://${host}${req.originalUrl}`);
+    }
+    const headers = {
         "X-Content-Type-Options": "nosniff",
         "X-Frame-Options": "DENY",
-        "Cache-Control": "no-store"
-    });
+        "Cache-Control": "no-store",
+        "Referrer-Policy": "no-referrer",
+        "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'" // the API only returns JSON and downloads, never pages
+    };
+    if (req.secure) headers["Strict-Transport-Security"] = "max-age=15552000; includeSubDomains";
+    res.set(headers);
     next();
 });
 

@@ -1,0 +1,28 @@
+flowchart LR
+    subgraph Client["Browser"]
+        SPA["React single-page app<br/>(Vite build)<br/>Patient / Doctor / Pharmacy / Admin screens"]
+    end
+    subgraph API["Node.js + Express API (one deployable)"]
+        MW["Middleware<br/>security headers, JSON/raw body,<br/>JWT auth, role check, audit"]
+        RT["Routes -> Services<br/>auth, prescriptions, reminders,<br/>pharmacy and stock, appointments,<br/>search, attachments, analytics"]
+        CRON["Scheduler (every 60 s)<br/>missed doses, reminder alerts"]
+        MSG["messageSender<br/>email / SMS"]
+        BLOB["blobStore<br/>Azure Blob or local folder"]
+    end
+    subgraph Azure["Azure (resource group medsync-rg)"]
+        DB[("Azure Database for MySQL<br/>18 tables, 3 views,<br/>triggers, procedure")]
+        ST[("Blob Storage<br/>private container<br/>prescription-files")]
+    end
+    EXT1["SMTP server"]
+    EXT2["Twilio SMS"]
+    EXT3["NIH RxNorm<br/>(drug lookup)"]
+
+    SPA -- "HTTPS, JSON + Bearer token" --> MW --> RT
+    RT -- "SQL over TLS" --> DB
+    RT --> BLOB -- "HTTPS" --> ST
+    CRON --> DB
+    CRON --> MSG
+    RT --> MSG
+    MSG --> EXT1
+    MSG --> EXT2
+    RT -- "medicine search" --> EXT3

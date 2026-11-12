@@ -896,3 +896,77 @@ test("a tab's own token wins over a cookie left by another role in the same brow
     assert.equal(await get({ Cookie: cookie }), 403, "with no header the cookie still works (as the patient)");
     assert.equal(await get({ Authorization: `Bearer ${tokens.pat1}`, Cookie: `auth_token=${tokens.admin}` }), 403, "patient tab stays patient");
 });
+
+test("files on a prescription: only the author uploads; owner, doctor and pharmacy read; strangers get 404; content is checked", async () => {
+    const fs = require("node:fs"), os = require("node:os");
+    process.env.BLOB_LOCAL_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "medsync-blobs-"));
+    // Set AZURE_TEST_CONNECTION_STRING (e.g. to the Azurite emulator or a test storage account) to run this same test against Azure Blob Storage.
+    if (process.env.AZURE_TEST_CONNECTION_STRING) process.env.AZURE_STORAGE_CONNECTION_STRING = process.env.AZURE_TEST_CONNECTION_STRING;
+    else delete process.env.AZURE_STORAGE_CONNECTION_STRING;
+    const send = (url, as, { method = "POST", type, body } = {}) =>
+        fetch(base + url, { method, headers: { Authorization: `Bearer ${tokens[as]}`, ...(type ? { "Content-Type": type } : {}) }, body });
+    const pdf = Buffer.concat([Buffer.from("%PDF-1.4\n"), Buffer.from("hello medsync")]);
+    const up = "/api/prescriptions/1/attachments?name=" + encodeURIComponent("../../lab report.pdf");
+
+    assert.equal((await send(up, "pat1", { type: "application/pdf", body: pdf })).status, 403, "patients cannot upload");
+    assert.equal((await send(up, "doc2", { type: "application/pdf", body: pdf })).status, 404, "another doctor cannot upload");
+    assert.equal((await send(up, "doc", { type: "application/pdf", body: Buffer.from("not a pdf at all") })).status, 400, "content must match the type");
+    assert.equal((await send(up, "doc", { type: "text/plain", body: "hello" })).status, 400, "only pdf/png/jpeg");
+    assert.equal((await send(up, "doc", { type: "application/pdf", body: Buffer.alloc(5 * 1024 * 1024 + 4096, 1) })).status, 413, "too large");
+
+    const ok = await send(up, "doc", { type: "application/pdf", body: pdf });
+    assert.equal(ok.status, 201);
+    const file = (await ok.json()).data;
+    assert.equal(file.file_name, "lab report.pdf", "path parts are stripped from the name");
+
+    for (const who of ["doc", "pat1", "staff1"]) {
+        const l = await (await send("/api/prescriptions/1/attachments", who, { method: "GET" })).json();
+        assert.equal(l.data.length, 1, `${who} sees the file`);
+        const d = await send(`/api/attachments/${file.attachment_id}/download`, who, { method: "GET" });
+        assert.equal(d.status, 200);
+        assert.equal(d.headers.get("content-type"), "application/pdf");
+        assert.deepEqual(Buffer.from(await d.arrayBuffer()), pdf, `${who} gets the same bytes`);
+    }
+    for (const who of ["pat2", "doc2"]) {
+        assert.equal((await send("/api/prescriptions/1/attachments", who, { method: "GET" })).status, 404);
+        assert.equal((await send(`/api/attachments/${file.attachment_id}/download`, who, { method: "GET" })).status, 404);
+        assert.equal((await send(`/api/attachments/${file.attachment_id}`, who, { method: "DELETE" })).status, 404);
+    }
+    assert.equal((await send(`/api/attachments/${file.attachment_id}`, "pat1", { method: "DELETE" })).status, 404, "a patient cannot delete");
+    assert.equal((await send(`/api/attachments/${file.attachment_id}`, "doc", { method: "DELETE" })).status, 200);
+    assert.equal((await send(`/api/attachments/${file.attachment_id}/download`, "doc", { method: "GET" })).status, 404);
+    const [[{ n }]] = await pool.query("SELECT COUNT(*) AS n FROM prescription_attachments");
+    assert.equal(n, 0);
+    if (process.env.AZURE_TEST_CONNECTION_STRING) await assert.rejects(require("../src/services/blobStore").get("rx-1/missing.pdf"), "a missing blob is an error");
+    else assert.deepEqual(fs.readdirSync(path.join(process.env.BLOB_LOCAL_DIR, "rx-1")), [], "the stored file is gone too");
+});
+
+test("analytics: admin only; built from the SQL views; six months are always listed", async () => {
+    await login("admin", "admin@medsync.dev");
+    assert.equal((await call("GET", "/api/admin/analytics", { as: "doc" })).status, 403);
+    const r = await call("GET", "/api/admin/analytics", { as: "admin" });
+    assert.equal(r.status, 200);
+    const d = r.json.data;
+    assert.equal(d.prescriptions_by_month.length, 6);
+    assert.ok(Array.isArray(d.adherence) && Array.isArray(d.low_stock) && d.low_stock.length > 0);
+    assert.ok(d.low_stock.every((s) => typeof s.units_in_stock === "number"), "counts are numbers, not strings");
+    assert.equal(d.files.storage.driver, process.env.AZURE_STORAGE_CONNECTION_STRING ? "azure-blob" : "local-folder");
+    assert.ok(!JSON.stringify(d).includes("AccountKey"), "no secrets in the response");
+});
+
+test("transport hardening: security headers; with FORCE_HTTPS plain http is redirected and https gets HSTS", async () => {
+    const plain = await fetch(base + "/api/health");
+    assert.match(plain.headers.get("content-security-policy"), /default-src 'none'/);
+    assert.equal(plain.headers.get("referrer-policy"), "no-referrer");
+    assert.equal(plain.headers.get("strict-transport-security"), null, "no HSTS over plain http");
+    process.env.FORCE_HTTPS = "true";
+    try {
+        const redirected = await fetch(base + "/api/auth/me", { redirect: "manual" });
+        assert.equal(redirected.status, 308);
+        assert.match(redirected.headers.get("location"), /^https:\/\/[^/]+\/api\/auth\/me$/);
+        assert.equal((await fetch(base + "/api/health", { redirect: "manual" })).status, 200, "health probes stay on http");
+        const secure = await fetch(base + "/api/auth/me", { headers: { "X-Forwarded-Proto": "https" }, redirect: "manual" });
+        assert.equal(secure.status, 401);
+        assert.match(secure.headers.get("strict-transport-security"), /max-age=/);
+    } finally { delete process.env.FORCE_HTTPS; }
+});

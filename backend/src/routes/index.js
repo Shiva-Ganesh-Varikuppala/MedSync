@@ -12,6 +12,7 @@ const batchRoutes = require("./batchRoutes");
 const adminRoutes = require("./adminRoutes");
 const appointmentRoutes = require("./appointmentRoutes");
 const searchRoutes = require("./searchRoutes");
+const attachmentRoutes = require("./attachmentRoutes");
 
 const router = express.Router();
 router.use("/health", healthRoutes);
@@ -27,5 +28,6 @@ router.use("/batches", batchRoutes);
 router.use("/admin", adminRoutes);
 router.use("/appointments", appointmentRoutes);
 router.use("/search", searchRoutes);
+router.use("/attachments", attachmentRoutes);
 
 module.exports = router;

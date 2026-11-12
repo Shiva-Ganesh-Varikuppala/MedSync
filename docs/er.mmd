@@ -1,0 +1,79 @@
+erDiagram
+    USERS ||--o| DOCTORS : "is a"
+    USERS ||--o| PATIENTS : "is a"
+    USERS ||--o| PHARMACY_STAFF : "is a"
+    PHARMACIES ||--o{ PHARMACY_STAFF : employs
+    DOCTORS ||--o{ PRESCRIPTIONS : writes
+    PATIENTS ||--o{ PRESCRIPTIONS : receives
+    PRESCRIPTIONS ||--|{ PRESCRIPTION_ITEMS : contains
+    MEDICINES ||--o{ PRESCRIPTION_ITEMS : "prescribed as"
+    PRESCRIPTION_ITEMS ||--o{ REMINDERS : schedules
+    MEDICINES ||--o{ MEDICINE_INTERACTIONS : "interacts (x2)"
+    MEDICINES ||--o{ MEDICINE_BATCHES : "stocked as"
+    PHARMACIES ||--o{ MEDICINE_BATCHES : holds
+    PRESCRIPTIONS ||--o{ PRESCRIPTION_ATTACHMENTS : "has files"
+    PRESCRIPTIONS ||--o{ DISPENSED_ITEMS : "filled by"
+    MEDICINE_BATCHES ||--o{ DISPENSED_ITEMS : "taken from"
+    PATIENTS ||--o{ APPOINTMENTS : books
+    DOCTORS ||--o{ APPOINTMENTS : attends
+    USERS ||--o{ NOTIFICATIONS : receives
+    REMINDERS ||--o{ NOTIFICATIONS : triggers
+    USERS ||--o{ AUDIT_LOGS : performs
+    USERS ||--o{ REFRESH_TOKENS : owns
+    USERS { int user_id PK
+            string email UK
+            string role }
+    DOCTORS { int doctor_id PK
+              int user_id FK
+              string license_number UK }
+    PATIENTS { int patient_id PK
+               int user_id FK
+               date date_of_birth }
+    PHARMACIES { int pharmacy_id PK
+                 string name }
+    PHARMACY_STAFF { int pharmacy_staff_id PK
+                     int user_id FK
+                     int pharmacy_id FK }
+    MEDICINES { int medicine_id PK
+                string name
+                string generic_name }
+    PRESCRIPTIONS { int prescription_id PK
+                    int doctor_id FK
+                    int patient_id FK
+                    string status }
+    PRESCRIPTION_ITEMS { int prescription_item_id PK
+                         int prescription_id FK
+                         int medicine_id FK }
+    REMINDERS { int reminder_id PK
+                int prescription_item_id FK
+                datetime scheduled_at
+                string status }
+    MEDICINE_BATCHES { int batch_id PK
+                       int medicine_id FK
+                       int pharmacy_id FK
+                       int quantity
+                       date expiry_date }
+    PRESCRIPTION_ATTACHMENTS { int attachment_id PK
+                               int prescription_id FK
+                               string blob_name UK }
+    DISPENSED_ITEMS { int dispensed_item_id PK
+                      int prescription_id FK
+                      int batch_id FK
+                      int quantity }
+    MEDICINE_INTERACTIONS { int interaction_id PK
+                            int medicine_id_1 FK
+                            int medicine_id_2 FK
+                            string severity }
+    APPOINTMENTS { int appointment_id PK
+                   int patient_id FK
+                   int doctor_id FK
+                   datetime scheduled_at
+                   string status }
+    NOTIFICATIONS { bigint notification_id PK
+                    int user_id FK
+                    int reminder_id FK }
+    AUDIT_LOGS { bigint audit_id PK
+                 int user_id FK
+                 string action }
+    REFRESH_TOKENS { int token_id PK
+                     int user_id FK }

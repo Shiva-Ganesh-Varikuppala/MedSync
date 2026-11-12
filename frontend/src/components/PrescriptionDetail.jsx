@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from "react";
 import { useAuth } from "../auth";
+import Attachments from "./Attachments";
 
 // Loads and shows one prescription with its medicines. Shared by doctor and patient screens.
-export default function PrescriptionDetail({ id, onCancel }) {
+export default function PrescriptionDetail({ id, onCancel, canAttach = false }) {
   const { call } = useAuth();
   const [rx, setRx] = useState(null);
   const [error, setError] = useState("");
@@ -18,6 +19,7 @@ export default function PrescriptionDetail({ id, onCancel }) {
           <tr key={i.prescription_item_id}><td>{i.medicine_name}</td><td>{i.dosage}</td><td>{i.frequency}</td><td>{i.start_date}</td><td>{i.end_date}</td></tr>
         ))}</tbody>
       </table>
+      <Attachments prescriptionId={id} canEdit={canAttach} />
       {onCancel && rx.status === "ACTIVE" && <button className="secondary" onClick={() => onCancel(rx)}>Cancel prescription</button>}
     </div>
   );
