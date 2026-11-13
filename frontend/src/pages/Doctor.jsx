@@ -5,6 +5,7 @@ import MedicinePicker from "../components/MedicinePicker";
 import PrescriptionDetail from "../components/PrescriptionDetail";
 import { AreaChart } from "../components/Charts";
 import Appointments from "../components/Appointments";
+import TemplateBar from "../components/TemplateBar";
 
 const FREQUENCIES = [[1, "Once daily"], [2, "Twice daily"], [3, "Three times daily"], [4, "Four times daily"]];
 // Count of prescriptions per month for the last six months, oldest first.
@@ -14,7 +15,8 @@ const perMonth = (rows) => Array.from({ length: 6 }, (_, i) => {
   return { label: d.toLocaleDateString(undefined, { month: "short" }), value: rows.filter((r) => String(r.prescription_date).slice(0, 7) === key).length };
 });
 const today = () => new Date().toISOString().slice(0, 10);
-const addDays = (d, n) => { const x = new Date(`${d}T00:00:00`); x.setDate(x.getDate() + n); return x.toISOString().slice(0, 10); };
+// UTC arithmetic on a plain date: building it at local midnight and converting back shifted the date by a day east of UTC (e.g. India).
+const addDays = (d, n) => { const x = new Date(`${d}T00:00:00Z`); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
 const newItem = (m) => ({ key: Math.random(), medicine_id: m.medicine_id, label: `${m.name} ${m.strength || ""}`.trim(), dosage: "", frequency_per_day: 1, start_date: today(), end_date: addDays(today(), 6) });
 
 export default function Doctor() {
@@ -143,6 +145,7 @@ function NewPrescription({ patient, goPatients, done }) {
       <form className="form" onSubmit={submit}>
         <label>Diagnosis<input required maxLength={255} value={diagnosis} onChange={(e) => setDiagnosis(e.target.value)} /></label>
         <label>Notes (optional)<textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} /></label>
+        <TemplateBar items={items} diagnosis={diagnosis} notes={notes} onApply={(t) => { setDiagnosis(t.diagnosis); setNotes(t.notes); setItems(t.items); setError(""); }} />
         <h3>Medicines</h3>
         <MedicinePicker onPick={(m) => setItems((xs) => [...xs, newItem(m)])} />
         {items.map((x) => (

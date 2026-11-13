@@ -970,3 +970,37 @@ test("transport hardening: security headers; with FORCE_HTTPS plain http is redi
         assert.match(secure.headers.get("strict-transport-security"), /max-age=/);
     } finally { delete process.env.FORCE_HTTPS; }
 });
+
+test("prescription templates: a doctor saves, lists and deletes their own; others cannot see them", async () => {
+    const good = { name: "Fever (adult)", diagnosis: "Fever", notes: "Rest and fluids", items: [
+        { medicine_id: 1, dosage: "500 mg", frequency_per_day: 3, duration_days: 5 },
+        { medicine_id: 3, dosage: "400 mg", frequency_per_day: 1, duration_days: 3, instructions: "After food" }
+    ] };
+    const made = await call("POST", "/api/templates", { as: "doc", body: good });
+    assert.equal(made.status, 201);
+
+    const mine = await call("GET", "/api/templates", { as: "doc" });
+    assert.equal(mine.status, 200);
+    assert.equal(mine.json.data.length, 1);
+    assert.equal(mine.json.data[0].name, "Fever (adult)");
+    assert.equal(mine.json.data[0].items.length, 2);
+    assert.equal(mine.json.data[0].items[0].duration_days, 5);
+    assert.ok(mine.json.data[0].items[0].medicine_name, "the medicine name is included for the screen");
+
+    assert.equal((await call("POST", "/api/templates", { as: "doc", body: good })).status, 409, "same name twice");
+    assert.equal((await call("POST", "/api/templates", { as: "doc", body: { ...good, name: "Bad medicine", items: [{ ...good.items[0], medicine_id: 999 }] } })).status, 400);
+    assert.equal((await call("POST", "/api/templates", { as: "doc", body: { ...good, name: "Too long", items: [{ ...good.items[0], duration_days: 400 }] } })).status, 400);
+    assert.equal((await call("POST", "/api/templates", { as: "doc", body: { ...good, name: "Empty", items: [] } })).status, 400);
+    assert.equal((await call("GET", "/api/templates", { as: "doc" })).json.data.length, 1, "failed saves leave nothing behind");
+
+    const id = made.json.data.template_id;
+    assert.deepEqual((await call("GET", "/api/templates", { as: "doc2" })).json.data, [], "another doctor sees none");
+    assert.equal((await call("DELETE", `/api/templates/${id}`, { as: "doc2" })).status, 404, "another doctor cannot delete it");
+    assert.equal((await call("GET", "/api/templates", { as: "pat1" })).status, 403, "patients have no templates");
+    assert.equal((await call("GET", "/api/templates")).status, 401);
+
+    assert.equal((await call("DELETE", `/api/templates/${id}`, { as: "doc" })).status, 200);
+    assert.equal((await call("GET", "/api/templates", { as: "doc" })).json.data.length, 0);
+    const [[left]] = await pool.query("SELECT COUNT(*) AS n FROM prescription_template_items WHERE template_id = ?", [id]);
+    assert.equal(left.n, 0, "the items were deleted with the template");
+});

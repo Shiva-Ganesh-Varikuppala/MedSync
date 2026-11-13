@@ -1,16 +1,16 @@
 # MedSync: database design (RDBMS submission)
 
-Engine: MySQL 8 (Azure Database for MySQL in the deployed version). Files: `database/schema/01_all.sql`, `database/seeds/01_all.sql`, `database/migrations/001-011`, `database/queries.sql`. ER diagram: `docs/er-diagram.png` (source `docs/er.mmd`).
+Engine: MySQL 8 (Azure Database for MySQL in the deployed version). Files: `database/schema/01_all.sql`, `database/seeds/01_all.sql`, `database/migrations/` (numbered, run in order), `database/queries.sql`. ER diagram: `docs/er-diagram.png` (source `docs/er.mmd`).
 
 ![ER diagram](er-diagram.png)
 
-## 1. Tables (18, all related)
+## 1. Tables (20, all related)
 
 | Group | Tables |
 |---|---|
 | People | `users`, `doctors`, `patients`, `pharmacies`, `pharmacy_staff` |
 | Medicines and stock | `medicines`, `medicine_interactions`, `medicine_batches`, `dispensed_items` |
-| Care | `prescriptions`, `prescription_items`, `prescription_attachments`, `reminders`, `appointments` |
+| Care | `prescriptions`, `prescription_items`, `prescription_attachments`, `prescription_templates`, `prescription_template_items`, `reminders`, `appointments` |
 | System | `notifications`, `audit_logs`, `refresh_tokens`, `throttle_attempts` |
 
 Every table has an integer primary key. The core foreign keys use `ON UPDATE CASCADE ON DELETE RESTRICT`, so a doctor, patient, medicine or batch that is referenced can never be deleted by accident (the log and token tables use their own delete rules). Other constraints: `UNIQUE` on `users.email` and `doctors.license_number`, `NOT NULL` on required columns, `ENUM` on every status column.
