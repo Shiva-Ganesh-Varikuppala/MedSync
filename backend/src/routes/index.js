@@ -9,9 +9,9 @@ const doctorRoutes = require("./doctorRoutes");
 const reminderRoutes = require("./reminderRoutes");
 const pharmacyRoutes = require("./pharmacyRoutes");
 const batchRoutes = require("./batchRoutes");
+const searchRoutes = require("./searchRoutes");
 const adminRoutes = require("./adminRoutes");
 const appointmentRoutes = require("./appointmentRoutes");
-const searchRoutes = require("./searchRoutes");
 const attachmentRoutes = require("./attachmentRoutes");
 const templateRoutes = require("./templateRoutes");
 
@@ -26,9 +26,9 @@ router.use("/doctors", doctorRoutes);
 router.use("/reminders", reminderRoutes);
 router.use("/pharmacies", pharmacyRoutes);
 router.use("/batches", batchRoutes);
+router.use("/search", searchRoutes);
 router.use("/admin", adminRoutes);
 router.use("/appointments", appointmentRoutes);
-router.use("/search", searchRoutes);
 router.use("/attachments", attachmentRoutes);
 router.use("/templates", templateRoutes);
 

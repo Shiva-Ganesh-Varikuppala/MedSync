@@ -1,0 +1,8 @@
+import React, { useEffect, useRef, useState } from "react";
+import { api } from "./api";
+export default function GlobalSearch({ token }) {
+ const [open,setOpen]=useState(false),[q,setQ]=useState(""),[rows,setRows]=useState([]),[busy,setBusy]=useState(false),[error,setError]=useState(""); const input=useRef();
+ useEffect(()=>{const key=e=>{if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==="k"){e.preventDefault();setOpen(true);setTimeout(()=>input.current?.focus(),0)}if(e.key==="Escape")setOpen(false)};window.addEventListener("keydown",key);return()=>window.removeEventListener("keydown",key)},[]);
+ useEffect(()=>{if(q.trim().length<2){setRows([]);return}const t=setTimeout(async()=>{setBusy(true);try{setRows((await api(`/search?q=${encodeURIComponent(q)}&limit=8`,{token})).data.results)}catch(e){setError(e.message)}finally{setBusy(false)}},300);return()=>clearTimeout(t)},[q,token]);
+ return <div className="search"><button className="search-trigger" onClick={()=>setOpen(true)}>⌕ Search <kbd>⌘K</kbd></button>{open&&<div className="search-popover"><input ref={input} autoFocus value={q} onChange={e=>setQ(e.target.value)} placeholder="Search patients, doctors, medicines..."/><button className="secondary" onClick={()=>{setQ("");setOpen(false)}}>Clear</button>{busy&&<p className="muted">Searching…</p>}{error&&<p className="error">{error}</p>}{rows.map(r=><button className="search-row" onClick={()=>setOpen(false)} key={`${r.category}-${r.id}`}><small>{r.category}</small><strong>{r.title}</strong><span>{r.subtitle}</span></button>)}{q.length>=2&&!busy&&!rows.length&&<p className="muted">No permitted results found.</p>}</div>}</div>;
+}
