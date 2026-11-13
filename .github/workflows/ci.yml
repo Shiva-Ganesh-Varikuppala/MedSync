@@ -25,6 +25,7 @@ jobs:
         image: mysql:8.0
         env:
           MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: medsync   # the health test connects to this database, so it must exist
         ports:
           - 3306:3306
         options: >-
