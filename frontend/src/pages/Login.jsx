@@ -12,7 +12,9 @@ export default function Login() {
   const [form, setForm] = useState({});
   const [message, setMessage] = useState({ error: "", success: "" });
   const [loading, setLoading] = useState(false);
+  const [revealPassword, setRevealPassword] = useState(false);
   const change = (e) => setForm({ ...form, [e.target.name]: e.target.value });
+  const tiltCapsule = (e) => { const r = e.currentTarget.getBoundingClientRect(); e.currentTarget.style.setProperty("--tilt-x", `${((e.clientX-r.left)/r.width-.5)*12}deg`); e.currentTarget.style.setProperty("--tilt-y", `${((e.clientY-r.top)/r.height-.5)*-12}deg`); };
 
   async function submit(e) {
     e.preventDefault();
@@ -40,14 +42,15 @@ export default function Login() {
       <section className="hero">
         <div className="brand"><Brand size={34} /><span>MedSync</span></div>
         <h1>Medication care, <em>in sync.</em></h1>
-        <p className="lead">Prescriptions, dose reminders and pharmacy stock in one place, so the right medicine reaches the right patient on time.</p>
+        <p className="lead">Smarter prescriptions. Safer medication. Better-connected healthcare.</p>
         <ul className="chips" aria-label="What MedSync does">
-          <li>Prescriptions</li><li>Dose reminders</li><li>Interaction checks</li><li>Pharmacy stock</li>
+          <li><b>⌁</b> Prescriptions</li><li><b>◷</b> Smart reminders</li><li><b>✓</b> Drug safety</li><li><b>+</b> Pharmacy management</li>
         </ul>
-        <div className="capsule-art" aria-hidden="true"><i className="cap"><b /></i><i className="dot d1" /><i className="dot d2" /><i className="dot d3" /></div>
+        <div className="capsule-art" aria-hidden="true" onMouseMove={tiltCapsule} onMouseLeave={(e)=>{e.currentTarget.style.setProperty("--tilt-x","0deg");e.currentTarget.style.setProperty("--tilt-y","0deg");}}><i className="orbit"/><i className="cap"><b /></i><i className="dot d1">+</i><i className="dot d2">♥</i><i className="dot d3">✓</i></div>
       </section>
       <form onSubmit={submit} className="card form">
-        <h2>{register ? "Create patient account" : "Sign in"}</h2>
+        <h2>{register ? "Create patient account" : "Welcome back!"}</h2>
+        {!register && <p className="login-subtitle">Sign in to your MedSync account.</p>}
         <Notice error={message.error || ""} success={message.success || (!register ? sessionNote : "")} />
         {register && (
           <>
@@ -56,7 +59,7 @@ export default function Login() {
           </>
         )}
         <label>Email<input name="email" type="email" autoComplete="username" required onChange={change} /></label>
-        <label>Password<input name="password" type="password" autoComplete={register ? "new-password" : "current-password"} required minLength={register ? 8 : undefined} onChange={change} /></label>
+        <label>Password<span className="password-field"><input name="password" type={revealPassword ? "text" : "password"} autoComplete={register ? "new-password" : "current-password"} required minLength={register ? 8 : undefined} onChange={change} /><button type="button" className="reveal" aria-label={revealPassword ? "Hide password" : "Show password"} onClick={()=>setRevealPassword(!revealPassword)}>{revealPassword ? "Hide" : "Show"}</button></span></label>
         {register && <p className="muted small">At least 8 characters, with a letter and a number.</p>}
         <button disabled={loading}>{loading ? "Working…" : register ? "Register" : "Sign in"}</button>
         <button type="button" className="link" onClick={() => { setRegister(!register); setMessage({ error: "", success: "" }); }}>
