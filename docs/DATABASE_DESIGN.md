@@ -23,7 +23,7 @@ Every table has an integer primary key. The core foreign keys use `ON UPDATE CAS
   - A doctor's name lives in `users`, not copied into `prescriptions`. `doctors` and `patients` hold only role-specific facts (licence, date of birth).
   - Medicine facts (name, strength) live in `medicines`; `prescription_items` stores only what is specific to the prescription (dosage, frequency, dates).
   - Pharmacy stock is `medicine_batches`; what was handed out is `dispensed_items`, so quantities are not stored twice.
-  - A medicine interaction is one row per pair in `medicine_interactions`.
+  - A medicine interaction is one row per pair in `medicine_interactions`, with a `severity` (`MILD`, `MODERATE`, `SEVERE`) and a description. The pair is stored once, lower medicine id first, and the checker finds it in either order. Migration 014 adds 4 common medicines and 14 well-known pairs as demonstration data.
 - **Deliberate exceptions** (written down, as 3NF asks):
   - `prescriptions.dispensed_at/dispensed_by/dispensed_pharmacy_id` repeat what `dispensed_items` could show. They make "is this prescription filled, and by whom" a single-row read, and they are written in the same transaction as `dispensed_items`.
   - `prescription_items.frequency_per_day` is a number derived from the text in `frequency`. The reminder generator needs the number, and it is validated when the row is created.
@@ -41,10 +41,12 @@ Every table has an integer primary key. The core foreign keys use `ON UPDATE CAS
 
 `EXPLAIN` on the doctor's prescription list shows `key = ix_prescriptions_doctor` (query 11 in `queries.sql`).
 
+Overrides and acknowledgements are not separate tables: they are rows in `audit_logs` (`INTERACTION_OVERRIDE` when a doctor prescribes a severe pair with a written reason; `PRESCRIPTION_DISPENSE` with the interactions and `interactions_acknowledged` in its `details` JSON). One append-only audit table keeps the history in one place.
+
 ## 4. Running it
 
 ```bash
-npm run db:migrate -- --seed        # schema, sample data, then migrations 001-011
+npm run db:migrate -- --seed        # schema, sample data, then every migration in database/migrations/
 mysql -u <user> -p medsync < database/queries.sql
 ```
 

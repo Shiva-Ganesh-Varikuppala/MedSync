@@ -3,6 +3,7 @@ const { badRequest, forbidden, notFound } = require("../utils/httpError");
 const { likeEscape, pagination, toDate, toInt, toText } = require("../utils/validate");
 const { withTransaction } = require("../utils/transaction");
 const { writeAudit } = require("../utils/audit");
+const interactionService = require("./interactionService");
 
 const courseDays = (start, end) => Math.round((Date.parse(`${end}T00:00:00Z`) - Date.parse(`${start}T00:00:00Z`)) / 86400000) + 1;
 
@@ -199,6 +200,27 @@ async function pendingPrescriptions(user, id, query = {}) {
     return rows;
 }
 
+// Interactions among this prescription's medicines and against the patient's other current medicines, worked out on the
+// server. A prescription with a single medicine and a patient with nothing else active gives an empty list.
+async function interactionsForPrescription(rxId) {
+    const [headers] = await pool.execute("SELECT patient_id FROM prescriptions WHERE prescription_id = ?", [rxId]);
+    if (!headers.length) return [];
+    const header = headers[0];
+    const [meds] = await pool.execute("SELECT DISTINCT medicine_id FROM prescription_items WHERE prescription_id = ?", [rxId]);
+    if (!meds.length) return [];
+    return interactionService.check(meds.map((m) => m.medicine_id).join(","), header.patient_id);
+}
+
+// The reason the doctor wrote when prescribing despite a warning (kept in the audit log), or null.
+async function doctorOverrideReason(rxId) {
+    const [rows] = await pool.execute("SELECT details FROM audit_logs WHERE action = 'INTERACTION_OVERRIDE' AND entity_type = 'prescription' AND entity_id = ? LIMIT 1", [rxId]);
+    if (!rows.length) return null;
+    try {
+        const d = typeof rows[0].details === "string" ? JSON.parse(rows[0].details) : rows[0].details;
+        return d && d.reason ? String(d.reason) : null;
+    } catch (_) { return null; }
+}
+
 async function checkStock(user, id, prescriptionId) {
     const pharmacyId = toInt(id, "pharmacyId");
     if (await staffPharmacy(user) !== pharmacyId) throw forbidden("You can only view your assigned pharmacy");
@@ -272,9 +294,13 @@ async function checkStock(user, id, prescriptionId) {
         });
     }
 
+    const interactions = await interactionsForPrescription(rxId);
     return {
         prescription: header,
         items: checkedItems,
+        interactions,
+        requires_interaction_acknowledgement: interactions.some((x) => x.severity === "SEVERE"),
+        doctor_override_reason: interactions.length ? await doctorOverrideReason(rxId) : null,
         can_dispense: allSufficient && header.status === "ACTIVE"
     };
 }
@@ -283,6 +309,14 @@ async function dispense(user, id, prescriptionId, input = {}, ctx = {}) {
     const pharmacyId = toInt(id, "pharmacyId");
     if (await staffPharmacy(user) !== pharmacyId) throw forbidden("You can only dispense from your assigned pharmacy");
     const rxId = toInt(prescriptionId, "prescriptionId");
+
+    // A SEVERE interaction must be acknowledged by the pharmacist, whatever client sent the request.
+    const interactions = await interactionsForPrescription(rxId);
+    const severe = interactions.filter((x) => x.severity === "SEVERE");
+    const acknowledged = input && input.acknowledge_interactions === true;
+    if (severe.length && !acknowledged) {
+        throw badRequest(`Severe interaction (${severe.map((x) => `${x.medicine_1} + ${x.medicine_2}`).join("; ")}). Review it and send acknowledge_interactions: true to dispense.`);
+    }
 
     return withTransaction(async (conn) => {
         const [headers] = await conn.execute(
@@ -361,7 +395,8 @@ async function dispense(user, id, prescriptionId, input = {}, ctx = {}) {
             details: {
                 pharmacy_id: pharmacyId,
                 items_dispensed: items.length,
-                total_batches_allocated: dispensedRecords.length
+                total_batches_allocated: dispensedRecords.length,
+                ...(interactions.length ? { interactions: interactions.map((x) => ({ medicines: [x.medicine_1, x.medicine_2], severity: x.severity })), interactions_acknowledged: acknowledged } : {})
             },
             ip: ctx.ip
         }, conn);

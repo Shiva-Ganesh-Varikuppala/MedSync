@@ -110,16 +110,22 @@ function NewPrescription({ patient, goPatients, done }) {
   const [notes, setNotes] = useState("");
   const [items, setItems] = useState([]);
   const [warnings, setWarnings] = useState([]);
+  const [reason, setReason] = useState("");   // why the doctor prescribes despite a warning; saved in the audit log
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
   const ids = items.map((i) => i.medicine_id).join(",");
-  // Live interaction check as soon as two or more different medicines are chosen.
+  const patientId = patient ? patient.patient_id : null;
+  // Live interaction check. With a patient chosen, even ONE new medicine is checked against what that patient is already taking;
+  // the server compares the new medicines with each other and with the patient's active prescriptions.
   useEffect(() => {
     const distinct = [...new Set(ids.split(",").filter(Boolean))];
-    if (distinct.length < 2) { setWarnings([]); return; }
-    call(`/interactions/check?medicineIds=${distinct.join(",")}`).then((r) => setWarnings(r.data)).catch(() => setWarnings([]));
-  }, [ids, call]);
+    if (!distinct.length || (!patientId && distinct.length < 2)) { setWarnings([]); return; }
+    let stale = false;   // ignore an answer that arrives after the list changed
+    const query = `medicineIds=${distinct.join(",")}${patientId ? `&patientId=${patientId}` : ""}`;
+    call(`/interactions/check?${query}`).then((r) => { if (!stale) setWarnings(r.data); }).catch(() => { if (!stale) setWarnings([]); });
+    return () => { stale = true; };
+  }, [ids, patientId, call]);
 
   if (!patient) return <Panel title="New prescription"><p className="muted">Choose a patient first.</p><button onClick={goPatients}>Find a patient</button></Panel>;
 
@@ -129,11 +135,13 @@ function NewPrescription({ patient, goPatients, done }) {
   async function submit(e) {
     e.preventDefault();
     if (!items.length) { setError("Add at least one medicine."); return; }
-    if (warnings.length && !window.confirm(`${warnings.length} interaction warning(s) found. Create the prescription anyway?`)) return;
+    if (hasSevere && reason.trim().length < 10) { setError("A severe interaction needs a written reason (at least 10 characters) before you can prescribe."); return; }
+    if (warnings.length && !hasSevere && !window.confirm(`${warnings.length} interaction warning(s) found. Create the prescription anyway?`)) return;
     setBusy(true);
     try {
       const { data } = await call("/prescriptions", { method: "POST", body: {
         patient_id: patient.patient_id, prescription_date: today(), diagnosis: diagnosis.trim(), notes: notes.trim() || undefined,
+        interaction_override_reason: warnings.length && reason.trim() ? reason.trim() : undefined,
         items: items.map(({ medicine_id, dosage, frequency_per_day, start_date, end_date }) => ({ medicine_id, dosage: dosage.trim(), frequency_per_day, start_date, end_date }))
       } });
       done(`Prescription #${data.prescription_id} created for ${patient.name}. Reminders were scheduled automatically.`);
@@ -163,9 +171,19 @@ function NewPrescription({ patient, goPatients, done }) {
           </div>
         ))}
         {warnings.map((w) => (
-          <p key={w.interaction_id} className="warning"><b>{w.severity}</b> — {w.medicine_1} + {w.medicine_2}: {w.description}</p>
+          <p key={w.interaction_id} className="warning">
+            <b>{w.severity}</b> — {w.medicine_1} + {w.medicine_2}: {w.description}
+            {w.is_cross_prescription && w.existing_medication && (
+              <> <em>{w.existing_medication.medicine_name} is already prescribed to {patient.name} (Dr. {w.existing_medication.doctor_name}, prescription #{w.existing_medication.prescription_id}, until {String(w.existing_medication.end_date).slice(0, 10)}).</em></>
+            )}
+          </p>
         ))}
         {hasSevere && <p className="warning">A severe interaction is present. Review before prescribing.</p>}
+        {warnings.length > 0 && (
+          <label>Reason for prescribing despite the warning{hasSevere ? " (required)" : " (optional)"}
+            <textarea rows={2} maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Benefit outweighs the risk; patient will be monitored." />
+          </label>
+        )}
         <Notice error={error} />
         <button disabled={busy}>{busy ? "Saving…" : "Create prescription"}</button>
       </form>

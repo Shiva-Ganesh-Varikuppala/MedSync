@@ -4,6 +4,9 @@ const { toDate, toInt, toText } = require("../utils/validate");
 const { withTransaction } = require("../utils/transaction");
 const { writeAudit } = require("../utils/audit");
 const { generateSchedule, FREQUENCY_LABELS } = require("../utils/schedule");
+const interactionService = require("./interactionService");
+
+const MIN_REASON = 10;   // characters of justification needed to prescribe despite a SEVERE interaction
 
 // Whole days from start to end, both included.
 const courseDays = (start, end) => Math.round((Date.parse(`${end}T00:00:00Z`) - Date.parse(`${start}T00:00:00Z`)) / 86400000) + 1;
@@ -30,6 +33,15 @@ async function create(doctorId, input, ctx = {}) {
     const patientId = toInt(input.patient_id, "patient_id");
     if (!Array.isArray(input.items) || !input.items.length) throw badRequest("items must contain at least one medicine");
     const items = input.items.map(itemInput);
+    // The server works out the interactions itself (among the new medicines and against what this patient already takes);
+    // it never trusts what the browser says it saw. A written reason is stored with the prescription's audit trail.
+    const overrideReason = toText(input.interaction_override_reason, "interaction_override_reason", { max: 500, required: false });
+    const interactions = await interactionService.check([...new Set(items.map((i) => i[0]))].join(","), patientId);
+    // A SEVERE interaction cannot be prescribed without a written reason, whatever client sent the request.
+    const severe = interactions.filter((x) => x.severity === "SEVERE");
+    if (severe.length && (!overrideReason || overrideReason.length < MIN_REASON)) {
+        throw badRequest(`Severe interaction (${severe.map((x) => `${x.medicine_1} + ${x.medicine_2}`).join("; ")}). Give a written reason of at least ${MIN_REASON} characters in interaction_override_reason to prescribe anyway.`);
+    }
     return withTransaction(async (conn) => {
         const [patients] = await conn.execute("SELECT patient_id FROM patients WHERE patient_id = ?", [patientId]);
         if (!patients.length) throw notFound("Patient not found");
@@ -48,6 +60,12 @@ async function create(doctorId, input, ctx = {}) {
         }
         // Part of the same transaction: if anything above fails, none of it is saved.
         await writeAudit({ userId: ctx.userId, action: "PRESCRIPTION_CREATE", entityType: "prescription", entityId: header.insertId, details: { patient_id: patientId, items: items.length, reminders_created: remindersCreated }, ip: ctx.ip }, conn);
+        if (overrideReason && interactions.length) {
+            await writeAudit({
+                userId: ctx.userId, action: "INTERACTION_OVERRIDE", entityType: "prescription", entityId: header.insertId, ip: ctx.ip,
+                details: { reason: overrideReason, interactions: interactions.map((x) => ({ medicines: [x.medicine_1, x.medicine_2], severity: x.severity, with_existing_prescription: x.existing_medication ? x.existing_medication.prescription_id : null })) }
+            }, conn);
+        }
         return header.insertId;
     });
 }

@@ -9,8 +9,8 @@ MedSync keeps a patient's prescriptions, reminders and pharmacy stock in one pla
 | Role | Needs |
 |---|---|
 | Patient | Sign in, see active and past prescriptions, get dose reminders and mark them taken or skipped, add extra reminders, request and cancel appointments, download files on a prescription, change own profile and password |
-| Doctor | See own patients, write a prescription (with a check for dangerous medicine pairs, including other doctors' medicines), reuse or save prescription templates, cancel it, attach files, confirm, decline, move or complete appointments |
-| Pharmacy staff | Manage the pharmacy's medicine batches (add, edit, remove, expiry and low-stock reports), see pending prescriptions, dispense with stock checks, see dispensing history |
+| Doctor | See own patients, write a prescription (with a check for dangerous medicine pairs, including other doctors' medicines; a severe pair needs a written reason), reuse or save prescription templates, cancel it, attach files, confirm, decline, move or complete appointments |
+| Pharmacy staff | Manage the pharmacy's medicine batches (add, edit, remove, expiry and low-stock reports), see pending prescriptions, dispense with stock checks (seeing any interaction warning and the doctor's reason; a severe one must be acknowledged), see dispensing history |
 | Admin | Create doctor, pharmacy and admin accounts, deactivate users, reset passwords, view analytics, run and inspect the reminder scheduler, check email and SMS delivery |
 | Everyone | Search (scoped to what the role may see), notifications, an audit trail of every change |
 
@@ -24,7 +24,7 @@ MedSync keeps a patient's prescriptions, reminders and pharmacy stock in one pla
 | Auditability | Every successful write is recorded with user, action, entity and IP | `audit_logs` |
 | Performance | Indexes on searched columns; every list is paged or capped; reports computed in SQL | `database/` |
 | Availability | Health endpoint reports database connectivity; the database is a managed Azure service (backups are configured in the portal) | `GET /api/health` |
-| Maintainability | Layers (routes, services, utils), numbered migrations with a runner, 41 automated tests against a real MySQL | `backend/test/` |
+| Maintainability | Layers (routes, services, utils), numbered migrations with a runner, 44 automated tests against a real MySQL | `backend/test/` |
 | Portability | Runs on any MySQL 8; Azure settings (TLS, time zone, Blob Storage) are environment variables; files fall back to a local folder | `backend/.env.example` |
 
 Out of scope for this version: payments, video consultations, mobile apps, multi-hospital tenancy.
@@ -48,6 +48,21 @@ HTTPS: the API itself speaks HTTP. In a deployment it sits behind a TLS terminat
 
 The two writes that matter most are single transactions. Writing a prescription saves the header, items, generated reminders and audit row together or not at all. Dispensing locks the batch rows, takes stock from the batch that expires first, records what was handed out, and marks the prescription dispensed, or changes nothing if stock is short.
 
+### Medicine interaction safety
+
+A dangerous medicine pair is caught at three points, and each one is enforced by the server, not only by the screens.
+
+| Step | What happens | Enforced by |
+|---|---|---|
+| Doctor chooses medicines | The form calls `GET /interactions/check` with the patient, so the new medicines are compared with each other **and with the patient's current prescriptions** (from any doctor). Warnings show the severity and which earlier prescription is involved. | `interactionService.check` |
+| Doctor saves the prescription | The server works out the interactions itself. A `SEVERE` one is refused (400) unless the request carries `interaction_override_reason` of at least 10 characters. With a reason, the prescription is saved and an `INTERACTION_OVERRIDE` audit row is written in the same transaction. | `prescriptionService.create` |
+| Pharmacist dispenses | The review screen shows the warnings and the doctor's reason. A `SEVERE` one is refused (400) unless the request carries `acknowledge_interactions: true`; the dispense audit row records the interactions and the acknowledgement. | `pharmacyService.checkStock` and `dispense` |
+
+Severity levels are `MILD`, `MODERATE` and `SEVERE`. Only `SEVERE` blocks a step; the others warn. Design points:
+- **The server decides.** A client cannot skip a check by calling the API directly, and a forged "I saw no warning" is meaningless because the server recomputes it.
+- **Every override leaves a trace.** Who, which prescription, which pair, and why, in `audit_logs`.
+- **The data is demonstration data.** `medicine_interactions` holds a small, simplified set of well-known pairs taken from public drug-label information (migration 014). A real deployment would license a clinical interaction database. The screens say it is decision support, not a replacement for clinical judgement.
+
 ## 3. API list
 
 Base path `/api`. Every response is `{ success, message, data }`. All routes except `/health`, `/auth/register`, `/auth/login` and `/auth/refresh` need a sign-in; the role column says who may call them.
@@ -62,7 +77,7 @@ Base path `/api`. Every response is `{ success, message, data }`. All routes exc
 | Prescriptions | `POST /prescriptions`, `POST /prescriptions/:id/cancel`, `GET /prescriptions/:id` and `/:id/items`, `GET` and `POST /prescriptions/:id/attachments` | doctor writes; the people involved read |
 | Files | `GET /attachments/:id/download`, `DELETE /attachments/:id` | the people involved read; the author deletes |
 | Medicines | `GET /medicines`, `/medicines/search`, `/medicines/:id`, `/medicines/external/*`; `POST`, `PUT`, `DELETE` | everyone reads; pharmacy staff write |
-| Interactions | `GET /interactions/check`, `/interactions/:medicineId` | signed in |
+| Interactions | `GET /interactions/check?medicineIds=1,3[&patientId=]` (with `patientId`, also checks the patient's current medicines; doctors for any patient, a patient only for themselves), `/interactions/:medicineId` | signed in |
 | Reminders | `GET /reminders`, `/reminders/due`; `POST /reminders`; `PATCH /reminders/:id/status`; `DELETE /reminders/:id`; `POST /reminders/:id/notify` | patient |
 | Pharmacy | `GET /pharmacies`, `/pharmacies/:id/inventory`, `/low-stock`, `/expiring`, `/prescriptions/pending`, `/prescriptions/:rx/stock`, `/dispensations`; `POST /pharmacies/:id/batches`, `POST /pharmacies/:id/prescriptions/:rx/dispense` | pharmacy staff (own pharmacy) |
 | Batches | `PUT /batches/:id`, `PATCH /batches/:id/quantity`, `DELETE /batches/:id` | pharmacy staff |
@@ -79,7 +94,7 @@ The full request and response examples are in `backend/README.md`.
 **Why.**
 - **Transactions.** Dispensing touches stock, dispensed items and prescription status; creating a prescription touches prescriptions, items and reminders. In one program with one database these are ordinary transactions that either fully happen or not at all. Split across services, the same steps would need sagas or compensation logic, and a half-finished dispense in a pharmacy system is the failure we least want.
 - **Size.** Two developers and one database. Separate services would add network calls, deployment pipelines and duplicated login logic for no gain in speed or reliability at this scale.
-- **Testability.** All 41 tests run the real API against a real MySQL in under half a minute.
+- **Testability.** All 44 tests run the real API against a real MySQL in under half a minute.
 
 **What it costs.**
 - The whole API scales as one unit. If reminders or search ever need more capacity than the rest, they cannot be scaled alone.

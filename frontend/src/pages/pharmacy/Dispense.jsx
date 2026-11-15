@@ -43,6 +43,7 @@ function Review({ pid, id, onDone }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [reviewed, setReviewed] = useState(false);   // the pharmacist has read the severe interaction(s)
   const box = useRef(null);
   useEffect(() => { if (data) box.current?.scrollIntoView({ behavior: "smooth", block: "start" }); }, [data]);
   useEffect(() => { call(`/pharmacies/${pid}/prescriptions/${id}/stock`).then((r) => setData(r.data)).catch((e) => setError(e.message)); }, [call, pid, id]);
@@ -51,12 +52,14 @@ function Review({ pid, id, onDone }) {
     const name = data.prescription.patient_name;
     if (!window.confirm(`Dispense prescription #${id} for ${name}? Stock will be reduced and this cannot be undone.`)) return;
     setBusy(true);
-    try { await call(`/pharmacies/${pid}/prescriptions/${id}/dispense`, { method: "POST", body: {} }); onDone(`Prescription #${id} for ${name} was dispensed and stock was updated.`); }
+    try { await call(`/pharmacies/${pid}/prescriptions/${id}/dispense`, { method: "POST", body: { acknowledge_interactions: reviewed } }); onDone(`Prescription #${id} for ${name} was dispensed and stock was updated.`); }
     catch (e) { setError(e.message); } finally { setBusy(false); }
   }
 
   if (!data) return <Panel title={`Prescription #${id}`}>{error ? <Notice error={error} /> : <p className="muted">Checking stock…</p>}</Panel>;
   const { prescription: rx, items, can_dispense: ok } = data;
+  const interactions = data.interactions || [];
+  const needsAck = Boolean(data.requires_interaction_acknowledgement);
   return (
     <div ref={box} style={{ scrollMarginTop: "1rem" }}>
     <Panel title={`Prescription #${id} for ${rx.patient_name}`}>
@@ -77,10 +80,29 @@ function Review({ pid, id, onDone }) {
           </tbody>
         </table>
       </div>
+      {interactions.length > 0 && (
+        <>
+          <h3>Interaction warnings</h3>
+          {interactions.map((w) => (
+            <p key={w.interaction_id} className="warning">
+              <b>{w.severity}</b> — {w.medicine_1} + {w.medicine_2}: {w.description}
+              {w.is_cross_prescription && w.existing_medication && (
+                <> <em>{w.existing_medication.medicine_name} is already prescribed to this patient (Dr. {w.existing_medication.doctor_name}, prescription #{w.existing_medication.prescription_id}, until {String(w.existing_medication.end_date).slice(0, 10)}).</em></>
+              )}
+            </p>
+          ))}
+          {data.doctor_override_reason
+            ? <p className="muted">Reason given by {rx.doctor_name}: <i>{data.doctor_override_reason}</i></p>
+            : <p className="muted">The prescriber gave no written reason.</p>}
+          {needsAck && (
+            <label><input type="checkbox" checked={reviewed} onChange={(e) => setReviewed(e.target.checked)} /> I have reviewed the severe interaction(s) above and confirm this prescription may be dispensed.</label>
+          )}
+        </>
+      )}
       {!ok && <p className="warning">There is not enough in-date stock for every medicine. Receive more stock before dispensing.</p>}
       <Notice error={error} />
       <div className="actions">
-        <button disabled={!ok || busy} onClick={dispense}>{busy ? "Dispensing…" : "Dispense prescription"}</button>
+        <button disabled={!ok || busy || (needsAck && !reviewed)} onClick={dispense}>{busy ? "Dispensing…" : "Dispense prescription"}</button>
       </div>
     </Panel>
     </div>

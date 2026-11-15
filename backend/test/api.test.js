@@ -971,6 +971,90 @@ test("transport hardening: security headers; with FORCE_HTTPS plain http is redi
     } finally { delete process.env.FORCE_HTTPS; }
 });
 
+test("interaction override: the reason is audited only when the server finds an interaction", async () => {
+    const [[pat]] = await pool.query("SELECT p.patient_id FROM patients p JOIN users u ON u.user_id = p.user_id WHERE u.email = 'arjun.kumar@medsync.dev'");
+    const rx = (medicines, extra = {}) => ({ patient_id: pat.patient_id, prescription_date: inDays(0), diagnosis: "Pain", ...extra,
+        items: medicines.map((m) => ({ medicine_id: m, dosage: "1 tablet", frequency_per_day: 1, start_date: inDays(0), end_date: inDays(2) })) });
+    const overrides = async () => (await pool.query("SELECT details FROM audit_logs WHERE action = 'INTERACTION_OVERRIDE'"))[0];
+    const before = (await overrides()).length;
+
+    // medicines 1 and 3 are a seeded interaction pair
+    const made = await call("POST", "/api/prescriptions", { as: "doc", body: rx([1, 3], { interaction_override_reason: "Benefit outweighs the risk; monitored." }) });
+    assert.equal(made.status, 201);
+    const after1 = await overrides();
+    assert.equal(after1.length, before + 1, "the override was audited");
+    const details = typeof after1[after1.length - 1].details === "string" ? JSON.parse(after1[after1.length - 1].details) : after1[after1.length - 1].details;
+    assert.match(details.reason, /Benefit outweighs/);
+    assert.ok(details.interactions.length >= 1);
+
+    // a reason with no interaction is ignored: nothing to override (medicine 5 is in no seeded pair)
+    assert.equal((await call("POST", "/api/prescriptions", { as: "doc", body: rx([5], { interaction_override_reason: "Not needed" }) })).status, 201);
+    // an interaction without a reason is still allowed here (nothing is audited)
+    assert.equal((await call("POST", "/api/prescriptions", { as: "doc", body: rx([1, 3]) })).status, 201);
+    assert.equal((await overrides()).length, before + 1);
+});
+
+test("a SEVERE interaction is refused by the server unless a written reason is sent", async () => {
+    const [[pat]] = await pool.query("SELECT p.patient_id FROM patients p JOIN users u ON u.user_id = p.user_id WHERE u.email = 'priya.sharma@medsync.dev'");
+    const [made] = await pool.query("INSERT INTO medicine_interactions (medicine_id_1, medicine_id_2, severity, description) VALUES (5, 6, 'SEVERE', 'Test pair')");
+    try {
+        const rx = (extra = {}) => ({ patient_id: pat.patient_id, prescription_date: inDays(0), diagnosis: "Test", ...extra,
+            items: [5, 6].map((m) => ({ medicine_id: m, dosage: "1 tablet", frequency_per_day: 1, start_date: inDays(0), end_date: inDays(2) })) });
+        const count = async () => (await pool.query("SELECT COUNT(*) AS n FROM prescriptions"))[0][0].n;
+        const n0 = await count();
+
+        const none = await call("POST", "/api/prescriptions", { as: "doc", body: rx() });
+        assert.equal(none.status, 400);
+        assert.match(none.json.message, /Severe interaction/);
+        assert.equal((await call("POST", "/api/prescriptions", { as: "doc", body: rx({ interaction_override_reason: "ok" }) })).status, 400, "too short to count as a reason");
+        assert.equal(await count(), n0, "refused requests save nothing");
+
+        const ok = await call("POST", "/api/prescriptions", { as: "doc", body: rx({ interaction_override_reason: "Specialist advice; monitored closely." }) });
+        assert.equal(ok.status, 201);
+        assert.equal(await count(), n0 + 1);
+        const [rows] = await pool.query("SELECT 1 FROM audit_logs WHERE action = 'INTERACTION_OVERRIDE' AND entity_id = ?", [ok.json.data.prescription_id]);
+        assert.equal(rows.length, 1);
+    } finally {
+        await pool.query("DELETE FROM medicine_interactions WHERE interaction_id = ?", [made.insertId]);
+    }
+});
+
+test("pharmacy: the pharmacist sees interaction warnings and the doctor's reason, and must acknowledge a SEVERE one to dispense", async () => {
+    const [[staff]] = await pool.query("SELECT ps.pharmacy_id FROM pharmacy_staff ps JOIN users u ON u.user_id = ps.user_id WHERE u.email = 'neha.patel@medsync.dev'");
+    const [[pat]] = await pool.query("SELECT p.patient_id FROM patients p JOIN users u ON u.user_id = p.user_id WHERE u.email = 'priya.sharma@medsync.dev'");
+    const [pair] = await pool.query("INSERT INTO medicine_interactions (medicine_id_1, medicine_id_2, severity, description) VALUES (5, 6, 'SEVERE', 'Test pair')");
+    try {
+        for (const m of [5, 6]) await pool.query("INSERT INTO medicine_batches (medicine_id, pharmacy_id, batch_number, quantity, expiry_date) VALUES (?, ?, ?, 100, ?)", [m, staff.pharmacy_id, `IXN-${m}`, inDays(365)]);
+        const rx = { patient_id: pat.patient_id, prescription_date: inDays(0), diagnosis: "Test", interaction_override_reason: "Specialist advice; monitored closely.",
+            items: [5, 6].map((m) => ({ medicine_id: m, dosage: "1 tablet", frequency_per_day: 1, start_date: inDays(0), end_date: inDays(2) })) };
+        const made = await call("POST", "/api/prescriptions", { as: "doc", body: rx });
+        assert.equal(made.status, 201);
+        const id = made.json.data.prescription_id;
+        const url = `/api/pharmacies/${staff.pharmacy_id}/prescriptions/${id}`;
+
+        const review = await call("GET", `${url}/stock`, { as: "staff1" });
+        assert.equal(review.status, 200);
+        assert.ok(review.json.data.interactions.some((x) => x.severity === "SEVERE"), "the warning is shown to the pharmacist");
+        assert.equal(review.json.data.requires_interaction_acknowledgement, true);
+        assert.match(review.json.data.doctor_override_reason, /Specialist advice/);
+
+        const refused = await call("POST", `${url}/dispense`, { as: "staff1", body: {} });
+        assert.equal(refused.status, 400);
+        assert.match(refused.json.message, /Severe interaction/);
+        assert.equal((await call("POST", `${url}/dispense`, { as: "staff1", body: { acknowledge_interactions: "yes" } })).status, 400, "only a real true counts");
+        const [[still]] = await pool.query("SELECT status FROM prescriptions WHERE prescription_id = ?", [id]);
+        assert.equal(still.status, "ACTIVE", "nothing was dispensed");
+
+        const ok = await call("POST", `${url}/dispense`, { as: "staff1", body: { acknowledge_interactions: true } });
+        assert.equal(ok.status, 200);
+        const [audit] = await pool.query("SELECT details FROM audit_logs WHERE action = 'PRESCRIPTION_DISPENSE' AND entity_id = ?", [id]);
+        const d = typeof audit[0].details === "string" ? JSON.parse(audit[0].details) : audit[0].details;
+        assert.equal(d.interactions_acknowledged, true);
+    } finally {
+        await pool.query("DELETE FROM medicine_interactions WHERE interaction_id = ?", [pair.insertId]);
+    }
+});
+
 test("prescription templates: a doctor saves, lists and deletes their own; others cannot see them", async () => {
     const good = { name: "Fever (adult)", diagnosis: "Fever", notes: "Rest and fluids", items: [
         { medicine_id: 1, dosage: "500 mg", frequency_per_day: 3, duration_days: 5 },
