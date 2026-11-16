@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useAuth } from "../auth";
 import { Notice, Panel } from "../components/ui";
+import { downloadFile } from "../components/download";
 
 const ROLE_TEXT = { DOCTOR: "Doctor", PATIENT: "Patient", PHARMACY_STAFF: "Pharmacy staff", ADMIN: "Administrator" };
 
@@ -21,6 +22,7 @@ export default function Profile({ onClose }) {
         <section className="grid">
           <Details me={me} onSaved={saved} />
           <Password />
+          {me.role === "PATIENT" && <MyData />}
         </section>
       )}
     </>
@@ -63,6 +65,30 @@ function Details({ me, onSaved }) {
         <Notice {...note} />
         <button>Save changes</button>
       </form>
+    </Panel>
+  );
+}
+
+// A patient's copy of their own data: everything in one JSON file, or the prescriptions or reminders as a spreadsheet.
+function MyData() {
+  const { call } = useAuth();
+  const [busy, setBusy] = useState("");
+  const [note, setNote] = useState({});
+  const day = new Date().toISOString().slice(0, 10);
+  async function get(label, query, filename) {
+    setBusy(label); setNote({});
+    try { await downloadFile(call, `/export/my-data?${query}`, filename); setNote({ success: "Download started." }); }
+    catch (e) { setNote({ error: e.message }); } finally { setBusy(""); }
+  }
+  return (
+    <Panel title="Download my data">
+      <p className="muted small">A copy of your profile, prescriptions and reminders. The file contains health information, so keep it somewhere safe.</p>
+      <Notice {...note} />
+      <div className="actions">
+        <button className="secondary" disabled={!!busy} onClick={() => get("json", "format=json", `medsync-my-data-${day}.json`)}>{busy === "json" ? "Preparing…" : "Everything (JSON)"}</button>
+        <button className="secondary" disabled={!!busy} onClick={() => get("rx", "format=csv&part=prescriptions", `medsync-my-prescriptions-${day}.csv`)}>{busy === "rx" ? "Preparing…" : "Prescriptions (CSV)"}</button>
+        <button className="secondary" disabled={!!busy} onClick={() => get("rem", "format=csv&part=reminders", `medsync-my-reminders-${day}.csv`)}>{busy === "rem" ? "Preparing…" : "Reminders (CSV)"}</button>
+      </div>
     </Panel>
   );
 }

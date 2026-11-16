@@ -1055,6 +1055,89 @@ test("pharmacy: the pharmacist sees interaction warnings and the doctor's reason
     }
 });
 
+test("exports: prescription PDF follows ownership, patient data is only their own, admin CSV reports, every export is audited", async () => {
+    const raw = async (url, as) => {
+        const res = await fetch(base + url, { headers: as && tokens[as] ? { Authorization: `Bearer ${tokens[as]}` } : {} });
+        return { status: res.status, type: res.headers.get("content-type") || "", disposition: res.headers.get("content-disposition") || "", buf: Buffer.from(await res.arrayBuffer()) };
+    };
+    const [[pat]] = await pool.query("SELECT p.patient_id FROM patients p JOIN users u ON u.user_id = p.user_id WHERE u.email = 'arjun.kumar@medsync.dev'");
+    const made = await call("POST", "/api/prescriptions", { as: "doc", body: { patient_id: pat.patient_id, prescription_date: inDays(0), diagnosis: '=HYPERLINK("http://example.com")',
+        items: [{ medicine_id: 5, dosage: "1 tablet (10 mg)", frequency_per_day: 1, start_date: inDays(0), end_date: inDays(2) }] } });
+    assert.equal(made.status, 201);
+    const id = made.json.data.prescription_id;
+    const count = async (action) => (await pool.query("SELECT COUNT(*) AS n FROM audit_logs WHERE action = ?", [action]))[0][0].n;
+
+    // ---- prescription PDF
+    const exportsBefore = await count("PRESCRIPTION_EXPORT");
+    for (const who of ["doc", "pat1", "staff1"]) {
+        const r = await raw(`/api/export/prescriptions/${id}`, who);
+        assert.equal(r.status, 200, `${who} may download it`);
+        assert.match(r.type, /^application\/pdf/);
+        assert.match(r.disposition, /attachment; filename="medsync-prescription-\d+\.pdf"/);
+        assert.equal(r.buf.subarray(0, 5).toString(), "%PDF-");
+        assert.match(r.buf.subarray(-6).toString(), /%%EOF/);
+    }
+    assert.equal((await count("PRESCRIPTION_EXPORT")) - exportsBefore, 3, "each download is audited");
+    assert.equal((await raw(`/api/export/prescriptions/${id}`, "pat2")).status, 404, "another patient");
+    assert.equal((await raw(`/api/export/prescriptions/${id}`, "doc2")).status, 404, "another doctor");
+    assert.equal((await raw(`/api/export/prescriptions/${id}`)).status, 401);
+    assert.equal((await raw("/api/export/prescriptions/999999", "doc")).status, 404);
+
+    // ---- a patient's own data
+    const json = await raw("/api/export/my-data?format=json", "pat1");
+    assert.equal(json.status, 200);
+    assert.match(json.disposition, /attachment/);
+    const mine = JSON.parse(json.buf.toString("utf8"));
+    assert.equal(mine.profile.email, "arjun.kumar@medsync.dev");
+    assert.equal(mine.prescriptions.find((p) => p.prescription_id === id).items.length, 1);
+    assert.ok(!json.buf.toString("utf8").includes("priya.sharma@medsync.dev"), "nothing of another patient");
+    assert.ok(!json.buf.toString("utf8").includes("password"), "no password data");
+
+    const csv = await raw("/api/export/my-data?format=csv&part=prescriptions", "pat1");
+    assert.equal(csv.status, 200);
+    assert.match(csv.type, /^text\/csv/);
+    const text = csv.buf.toString("utf8");
+    assert.ok(text.startsWith("﻿Prescription,Date,Status,Doctor,Diagnosis"), "header row with a byte-order mark");
+    assert.ok(text.includes(`"'=HYPERLINK(""http://example.com"")"`) || text.includes("'=HYPERLINK"), "a formula in a text field is neutralised");
+    assert.ok(!/(^|,)=HYPERLINK/m.test(text), "no cell starts with =");
+    assert.equal((await raw("/api/export/my-data?format=csv&part=reminders", "pat1")).status, 200);
+    assert.equal((await raw("/api/export/my-data?format=xml", "pat1")).status, 400);
+    assert.equal((await raw("/api/export/my-data", "doc")).status, 403, "only patients have patient data");
+    assert.equal((await raw("/api/export/my-data")).status, 401);
+    assert.ok((await count("PATIENT_DATA_EXPORT")) >= 3);
+
+    // ---- administrator reports
+    await login("admin", "admin@medsync.dev");
+    const users = await raw("/api/export/admin/users", "admin");
+    assert.equal(users.status, 200);
+    assert.match(users.type, /^text\/csv/);
+    const usersText = users.buf.toString("utf8");
+    assert.ok(usersText.includes("ananya.rao@medsync.dev"));
+    assert.ok(!/password|\$2[aby]\$/i.test(usersText), "no password data");
+    assert.equal((await raw("/api/export/admin/stock", "admin")).status, 200);
+    const audit = await raw(`/api/export/admin/audit?from=2000-01-01&to=${inDays(1)}`, "admin");
+    assert.equal(audit.status, 200);
+    const auditText = audit.buf.toString("utf8");
+    assert.ok(auditText.includes("PRESCRIPTION_EXPORT"));
+    assert.ok(!/details/i.test(auditText.split("\r\n")[0]), "free-text details are not exported");
+    assert.equal((await raw(`/api/export/admin/audit?from=${inDays(1)}&to=2000-01-01`, "admin")).status, 400, "from after to");
+    assert.equal((await raw("/api/export/admin/audit?from=yesterday", "admin")).status, 400);
+    assert.equal((await raw("/api/export/admin/passwords", "admin")).status, 400, "unknown report");
+    for (const who of ["doc", "pat1", "staff1"]) assert.equal((await raw("/api/export/admin/users", who)).status, 403, `${who} is not an admin`);
+    assert.equal((await raw("/api/export/admin/users")).status, 401);
+    assert.ok((await count("ADMIN_EXPORT")) >= 3, "report downloads are audited");
+});
+
+test("csv writer: quotes, line ends and spreadsheet formulas", () => {
+    const { toCsv, cell } = require("../src/utils/csv");
+    assert.equal(cell('say "hi", ok'), '"say ""hi"", ok"');
+    assert.equal(cell("line1\nline2"), '"line1\nline2"');
+    for (const bad of ["=1+1", "+1", "-1+2", "@SUM(A1)", "\t=x"]) assert.ok(cell(bad).startsWith("'"), `${JSON.stringify(bad)} is neutralised`);
+    assert.equal(cell(-5), "-5", "real numbers stay numbers");
+    assert.equal(cell(null), "");
+    assert.equal(toCsv([{ key: "a", label: "A" }, { key: "b", label: "B" }], [{ a: 1, b: "x,y" }]), '﻿A,B\r\n1,"x,y"\r\n');
+});
+
 test("prescription templates: a doctor saves, lists and deletes their own; others cannot see them", async () => {
     const good = { name: "Fever (adult)", diagnosis: "Fever", notes: "Rest and fluids", items: [
         { medicine_id: 1, dosage: "500 mg", frequency_per_day: 3, duration_days: 5 },

@@ -14,6 +14,7 @@ const adminRoutes = require("./adminRoutes");
 const appointmentRoutes = require("./appointmentRoutes");
 const attachmentRoutes = require("./attachmentRoutes");
 const templateRoutes = require("./templateRoutes");
+const exportRoutes = require("./exportRoutes");
 
 const router = express.Router();
 router.use("/health", healthRoutes);
@@ -31,5 +32,6 @@ router.use("/admin", adminRoutes);
 router.use("/appointments", appointmentRoutes);
 router.use("/attachments", attachmentRoutes);
 router.use("/templates", templateRoutes);
+router.use("/export", exportRoutes);
 
 module.exports = router;

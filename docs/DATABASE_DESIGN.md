@@ -41,7 +41,7 @@ Every table has an integer primary key. The core foreign keys use `ON UPDATE CAS
 
 `EXPLAIN` on the doctor's prescription list shows `key = ix_prescriptions_doctor` (query 11 in `queries.sql`).
 
-Overrides and acknowledgements are not separate tables: they are rows in `audit_logs` (`INTERACTION_OVERRIDE` when a doctor prescribes a severe pair with a written reason; `PRESCRIPTION_DISPENSE` with the interactions and `interactions_acknowledged` in its `details` JSON). One append-only audit table keeps the history in one place.
+Overrides and acknowledgements are not separate tables: they are rows in `audit_logs` (`INTERACTION_OVERRIDE` when a doctor prescribes a severe pair with a written reason; `PRESCRIPTION_DISPENSE` with the interactions and `interactions_acknowledged` in its `details` JSON). One append-only audit table keeps the history in one place. Exports are recorded the same way (`PRESCRIPTION_EXPORT`, `PATIENT_DATA_EXPORT`, `ADMIN_EXPORT`), so "who downloaded what" can be answered from `audit_logs`. The exports add no tables.
 
 ## 4. Running it
 

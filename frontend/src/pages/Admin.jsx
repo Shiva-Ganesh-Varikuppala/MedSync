@@ -2,8 +2,9 @@ import React, { useCallback, useEffect, useState } from "react";
 import { useAuth } from "../auth";
 import { List, Notice, Panel, Tiles, useGoto } from "../components/ui";
 import { AreaChart, BarChart, Donut } from "../components/Charts";
+import { downloadFile } from "../components/download";
 
-const TABS = [["users", "Users"], ["create", "Create account"], ["pharmacy", "New pharmacy"], ["analytics", "Analytics"], ["automation", "Automation"]];
+const TABS = [["users", "Users"], ["create", "Create account"], ["pharmacy", "New pharmacy"], ["analytics", "Analytics"], ["reports", "Reports"], ["automation", "Automation"]];
 const ROLE_TEXT = { DOCTOR: "Doctor", PATIENT: "Patient", PHARMACY_STAFF: "Pharmacy staff", ADMIN: "Admin" };
 
 export default function Admin() {
@@ -20,6 +21,7 @@ export default function Admin() {
       {tab === "users" && <Users setFlash={setFlash} />}
       {tab === "create" && <CreateAccount done={(m) => { setFlash({ success: m }); setTab("users"); }} />}
       {tab === "analytics" && <Analytics />}
+      {tab === "reports" && <Reports />}
       {tab === "automation" && <Automation />}
       {tab === "pharmacy" && <NewPharmacy done={(m) => { setFlash({ success: m }); setTab("create"); }} />}
     </>
@@ -97,6 +99,42 @@ function Users({ setFlash }) {
           </>
         )} />
         {more && <button className="secondary" onClick={loadMore}>Load more</button>}
+      </Panel>
+    </>
+  );
+}
+
+// CSV reports for spreadsheets. Each download is recorded in the audit log.
+function Reports() {
+  const { call } = useAuth();
+  const today = new Date().toISOString().slice(0, 10);
+  const [from, setFrom] = useState(new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10));
+  const [to, setTo] = useState(today);
+  const [busy, setBusy] = useState("");
+  const [note, setNote] = useState({});
+  async function get(report, query = "") {
+    setBusy(report); setNote({});
+    try { await downloadFile(call, `/export/admin/${report}${query}`, `medsync-${report}-${today}.csv`); setNote({ success: "Download started." }); }
+    catch (e) { setNote({ error: e.message }); } finally { setBusy(""); }
+  }
+  return (
+    <>
+      <Notice {...note} />
+      <Panel title="Accounts">
+        <p className="muted">Every account with its role, whether it is active, and the licence or pharmacy. Password data is never included.</p>
+        <button disabled={!!busy} onClick={() => get("users")}>{busy === "users" ? "Preparing…" : "Download users (CSV)"}</button>
+      </Panel>
+      <Panel title="Pharmacy stock">
+        <p className="muted">Every batch in every pharmacy with its quantity and expiry state.</p>
+        <button disabled={!!busy} onClick={() => get("stock")}>{busy === "stock" ? "Preparing…" : "Download stock (CSV)"}</button>
+      </Panel>
+      <Panel title="Audit log">
+        <p className="muted">Who did what and when. The free-text details are left out because they can contain clinical wording.</p>
+        <div className="inline">
+          <label>From<input type="date" value={from} max={to} onChange={(e) => setFrom(e.target.value)} /></label>
+          <label>To<input type="date" value={to} min={from} max={today} onChange={(e) => setTo(e.target.value)} /></label>
+        </div>
+        <button disabled={!!busy || !from || !to} onClick={() => get("audit", `?from=${from}&to=${to}`)}>{busy === "audit" ? "Preparing…" : "Download audit log (CSV)"}</button>
       </Panel>
     </>
   );

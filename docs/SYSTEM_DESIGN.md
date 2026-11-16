@@ -8,10 +8,10 @@ MedSync keeps a patient's prescriptions, reminders and pharmacy stock in one pla
 
 | Role | Needs |
 |---|---|
-| Patient | Sign in, see active and past prescriptions, get dose reminders and mark them taken or skipped, add extra reminders, request and cancel appointments, download files on a prescription, change own profile and password |
+| Patient | Sign in, see active and past prescriptions, get dose reminders and mark them taken or skipped, add extra reminders, request and cancel appointments, download files on a prescription, download a prescription as a PDF, download a copy of their own data (JSON or CSV), change own profile and password |
 | Doctor | See own patients, write a prescription (with a check for dangerous medicine pairs, including other doctors' medicines; a severe pair needs a written reason), reuse or save prescription templates, cancel it, attach files, confirm, decline, move or complete appointments |
 | Pharmacy staff | Manage the pharmacy's medicine batches (add, edit, remove, expiry and low-stock reports), see pending prescriptions, dispense with stock checks (seeing any interaction warning and the doctor's reason; a severe one must be acknowledged), see dispensing history |
-| Admin | Create doctor, pharmacy and admin accounts, deactivate users, reset passwords, view analytics, run and inspect the reminder scheduler, check email and SMS delivery |
+| Admin | Create doctor, pharmacy and admin accounts, deactivate users, reset passwords, view analytics, run and inspect the reminder scheduler, check email and SMS delivery, download CSV reports (users, pharmacy stock, audit log) |
 | Everyone | Search (scoped to what the role may see), notifications, an audit trail of every change |
 
 ### Non-functional
@@ -24,7 +24,7 @@ MedSync keeps a patient's prescriptions, reminders and pharmacy stock in one pla
 | Auditability | Every successful write is recorded with user, action, entity and IP | `audit_logs` |
 | Performance | Indexes on searched columns; every list is paged or capped; reports computed in SQL | `database/` |
 | Availability | Health endpoint reports database connectivity; the database is a managed Azure service (backups are configured in the portal) | `GET /api/health` |
-| Maintainability | Layers (routes, services, utils), numbered migrations with a runner, 44 automated tests against a real MySQL | `backend/test/` |
+| Maintainability | Layers (routes, services, utils), numbered migrations with a runner, 46 automated tests against a real MySQL | `backend/test/` |
 | Portability | Runs on any MySQL 8; Azure settings (TLS, time zone, Blob Storage) are environment variables; files fall back to a local folder | `backend/.env.example` |
 
 Out of scope for this version: payments, video consultations, mobile apps, multi-hospital tenancy.
@@ -63,6 +63,22 @@ Severity levels are `MILD`, `MODERATE` and `SEVERE`. Only `SEVERE` blocks a step
 - **Every override leaves a trace.** Who, which prescription, which pair, and why, in `audit_logs`.
 - **The data is demonstration data.** `medicine_interactions` holds a small, simplified set of well-known pairs taken from public drug-label information (migration 014). A real deployment would license a clinical interaction database. The screens say it is decision support, not a replacement for clinical judgement.
 
+### Exports
+
+Downloads are built on the server, after the same role and ownership checks as the screens, and are sent with `Cache-Control: no-store` and `Content-Disposition: attachment`.
+
+| Export | Format | Rules |
+|---|---|---|
+| Prescription | PDF, written by a small built-in PDF writer (`utils/simplePdf.js`, no extra library) | Same access as viewing the prescription: its doctor, its patient, pharmacy staff. Anyone else gets 404. A cancelled prescription is stamped as cancelled. |
+| My data | JSON (everything) or CSV (prescriptions, or reminders) | Keyed by the patient id inside the signed token, never by a value in the request, so a patient can only ever export their own rows. No password data. |
+| Admin reports | CSV: users, stock, audit log | Admin only. The password hash is never selected. The audit export leaves out the free-text `details`, because those can hold clinical wording. The audit report is limited to 20,000 rows, so the admin chooses a date range. |
+
+Design points:
+- **CSV formula injection.** A text cell that starts with `=`, `+`, `-` or `@` runs as a formula in Excel and Google Sheets, and names and notes come from users. `utils/csv.js` prefixes such cells with an apostrophe, so they stay plain text.
+- **Every export is audited** (`PRESCRIPTION_EXPORT`, `PATIENT_DATA_EXPORT`, `ADMIN_EXPORT`), with the report name and row count for admin reports.
+- **Row caps** (50,000 rows per export) stop one request from reading a whole table into memory.
+- **Authenticated downloads.** The browser cannot attach a sign-in token to a plain link, so the screen fetches the file with the token and saves it from memory.
+
 ## 3. API list
 
 Base path `/api`. Every response is `{ success, message, data }`. All routes except `/health`, `/auth/register`, `/auth/login` and `/auth/refresh` need a sign-in; the role column says who may call them.
@@ -82,6 +98,7 @@ Base path `/api`. Every response is `{ success, message, data }`. All routes exc
 | Pharmacy | `GET /pharmacies`, `/pharmacies/:id/inventory`, `/low-stock`, `/expiring`, `/prescriptions/pending`, `/prescriptions/:rx/stock`, `/dispensations`; `POST /pharmacies/:id/batches`, `POST /pharmacies/:id/prescriptions/:rx/dispense` | pharmacy staff (own pharmacy) |
 | Batches | `PUT /batches/:id`, `PATCH /batches/:id/quantity`, `DELETE /batches/:id` | pharmacy staff |
 | Appointments | `GET /appointments`, `GET /appointments/doctors`, `POST /appointments`, `POST /appointments/:id/cancel`; `POST /appointments/:id/confirm`, `/decline`, `/reschedule`, `/complete` | patient books and cancels; doctor answers |
+| Export | `GET /export/prescriptions/:id` (PDF); `GET /export/my-data?format=json` or `?format=csv&part=prescriptions\|reminders`; `GET /export/admin/users`, `/stock`, `/audit?from=&to=` (CSV) | PDF: the writing doctor, the patient, pharmacy staff; my-data: patient; admin reports: admin |
 | Search | `GET /search?q=` | signed in (results depend on role) |
 | Admin | `GET /admin/summary`, `/admin/analytics`, `/admin/users`, `/admin/delivery`; `POST /admin/users`, `/admin/pharmacies`, `/admin/cron/run`, `/admin/delivery/test`; `PATCH /admin/users/:id/active`; `POST /admin/users/:id/password` | admin |
 
@@ -94,7 +111,7 @@ The full request and response examples are in `backend/README.md`.
 **Why.**
 - **Transactions.** Dispensing touches stock, dispensed items and prescription status; creating a prescription touches prescriptions, items and reminders. In one program with one database these are ordinary transactions that either fully happen or not at all. Split across services, the same steps would need sagas or compensation logic, and a half-finished dispense in a pharmacy system is the failure we least want.
 - **Size.** Two developers and one database. Separate services would add network calls, deployment pipelines and duplicated login logic for no gain in speed or reliability at this scale.
-- **Testability.** All 44 tests run the real API against a real MySQL in under half a minute.
+- **Testability.** All 46 tests run the real API against a real MySQL in under half a minute.
 
 **What it costs.**
 - The whole API scales as one unit. If reminders or search ever need more capacity than the rest, they cannot be scaled alone.
