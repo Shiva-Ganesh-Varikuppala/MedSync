@@ -17,7 +17,22 @@ const REFRESH_COOKIE_OPTS = {
 
 async function register(req, res) {
     const user = await authService.register(req.body || {});
-    res.status(201).json({ success: true, message: "Registration successful", data: { user } });
+    res.status(201).json({
+        success: true,
+        message: "Registration successful. Please check your email to verify your account before signing in.",
+        data: { user }
+    });
+}
+
+// POST only, and the token is read from the body: link scanners that merely open URLs must not be able to verify anyone.
+async function verifyEmail(req, res) {
+    const data = await authService.verifyEmail(req.body && req.body.token, req.ip);
+    res.json({ success: true, message: "Your email has been verified. You can now sign in.", data });
+}
+
+async function resendVerification(req, res) {
+    const data = await authService.resendVerification(req.body || {});
+    res.json({ success: true, message: "If that address belongs to an account waiting for verification, a new link has been sent.", data });
 }
 
 async function login(req, res) {
@@ -33,7 +48,8 @@ async function login(req, res) {
 
         res.json({ success: true, message: "Login successful", data });
     } catch (error) {
-        await recordFailure(req);
+        // A 403 means the password was right but the email is unverified: not a guessing attempt.
+        if (error.status !== 403) await recordFailure(req);
         throw error;
     }
 }
@@ -90,5 +106,7 @@ module.exports = {
     me,
     refresh,
     register,
-    updateMe
+    resendVerification,
+    updateMe,
+    verifyEmail
 };

@@ -3,7 +3,8 @@ const crypto = require("crypto");
 const jwt = require("jsonwebtoken");
 const pool = require("../config/database");
 const { jwtSecret } = require("../config/env");
-const { badRequest, forbidden, unauthorized } = require("../utils/httpError");
+const { HttpError, badRequest, forbidden, unauthorized } = require("../utils/httpError");
+const messageSender = require("./messageSender");
 const { writeAudit } = require("../utils/audit");
 const { toDate, toEnum, toInt, toText } = require("../utils/validate");
 const { withTransaction } = require("../utils/transaction");
@@ -13,6 +14,38 @@ const DUMMY_HASH = bcrypt.hashSync("not-a-real-password", 12);
 
 function hashToken(raw) {
     return crypto.createHash("sha256").update(String(raw)).digest("hex");
+}
+
+// ---- Email verification -------------------------------------------------------
+// Only the SHA-256 of a token is stored. The raw token exists in the email link and nowhere else.
+const VERIFY_HOURS = 24;
+const UNVERIFIED_MESSAGE = "Please verify your email address before signing in. Check your inbox or request a new verification link.";
+const resendCooldownSeconds = () => {
+    const v = process.env.VERIFY_RESEND_COOLDOWN_SECONDS;
+    const n = v === undefined || v === "" ? 60 : Number(v);
+    return Number.isFinite(n) && n >= 0 ? n : 60;
+};
+
+// Replaces any earlier unused link with a fresh one. Runs inside the caller's transaction.
+async function issueVerificationToken(conn, userId) {
+    await conn.execute("DELETE FROM email_verifications WHERE user_id = ? AND used_at IS NULL", [userId]);
+    const rawToken = crypto.randomBytes(32).toString("hex");
+    await conn.execute(
+        "INSERT INTO email_verifications (user_id, token_hash, expires_at) VALUES (?, ?, DATE_ADD(NOW(), INTERVAL ? HOUR))",
+        [userId, hashToken(rawToken), VERIFY_HOURS]
+    );
+    return rawToken;
+}
+
+// Never throws: a mail problem must not undo or block the sign-up. Nothing sensitive is logged.
+async function sendVerificationLink(toEmail, rawToken, name) {
+    try {
+        await messageSender.sendVerificationEmail(toEmail, rawToken, name);
+        return true;
+    } catch (err) {
+        console.warn(`[email] verification email could not be sent: ${String(err && err.message || "unknown error").slice(0, 120)}`);
+        return false;
+    }
 }
 
 function password(value) {
@@ -50,13 +83,21 @@ async function register(input) {
     };
     const passwordHash = await bcrypt.hash(user.password, 12);
 
-    return withTransaction(async (conn) => {
+    let rawToken = null;
+    const created = await withTransaction(async (conn) => {
         const [existing] = await conn.execute("SELECT user_id FROM users WHERE email = ?", [user.email]);
         if (existing.length) throw badRequest("An account with this email already exists");
-        const [created] = await conn.execute(
-            "INSERT INTO users (name, email, password_hash, role, phone) VALUES (?, ?, ?, ?, ?)",
-            [user.name, user.email, passwordHash, role, user.phone]
-        );
+        let created;
+        try {
+            // email_verified_at stays NULL until the link in the email is used.
+            [created] = await conn.execute(
+                "INSERT INTO users (name, email, password_hash, role, phone) VALUES (?, ?, ?, ?, ?)",
+                [user.name, user.email, passwordHash, role, user.phone]
+            );
+        } catch (err) {
+            if (err && err.code === "ER_DUP_ENTRY") throw badRequest("An account with this email already exists"); // two sign-ups at the same moment
+            throw err;
+        }
         const userId = created.insertId;
 
         if (role === "DOCTOR") {
@@ -76,8 +117,53 @@ async function register(input) {
             if (!pharmacy.length) throw badRequest("pharmacy_id does not exist");
             await conn.execute("INSERT INTO pharmacy_staff (user_id, pharmacy_id) VALUES (?, ?)", [userId, pharmacyId]);
         }
-        return { user_id: userId, name: user.name, email: user.email, role, phone: user.phone };
+        rawToken = await issueVerificationToken(conn, userId);
+        return { user_id: userId, name: user.name, email: user.email, role, phone: user.phone, email_verified: false };
     });
+    // After the commit, so a mail failure can never roll back the account.
+    created.verification_email_sent = await sendVerificationLink(created.email, rawToken, created.name);
+    return created;
+}
+
+// The page opened from the email link sends the token here with POST (never GET: mail scanners open links).
+async function verifyEmail(rawToken, ip) {
+    if (typeof rawToken !== "string" || rawToken.length < 20 || rawToken.length > 200) throw badRequest("This verification link is not valid.");
+    return withTransaction(async (conn) => {
+        const [rows] = await conn.execute(
+            "SELECT id, user_id, used_at, (expires_at < NOW()) AS expired FROM email_verifications WHERE token_hash = ? FOR UPDATE",
+            [hashToken(rawToken)]
+        );
+        if (!rows.length) throw badRequest("This verification link is not valid.");
+        const row = rows[0];
+        if (row.used_at) throw new HttpError(409, "This verification link has already been used. You can sign in.");
+        if (Number(row.expired)) throw new HttpError(410, "This verification link has expired. Request a new one.");
+        await conn.execute("UPDATE email_verifications SET used_at = NOW() WHERE id = ?", [row.id]);
+        await conn.execute("UPDATE users SET email_verified_at = COALESCE(email_verified_at, NOW()) WHERE user_id = ?", [row.user_id]);
+        await writeAudit({ userId: row.user_id, action: "EMAIL_VERIFIED", entityType: "user", entityId: row.user_id, ip }, conn);
+        return { verified: true };
+    });
+}
+
+// Always answers the same way, so it cannot be used to find out which emails have accounts.
+async function resendVerification(input) {
+    const userEmail = email(input.email);
+    const [rows] = await pool.execute(
+        "SELECT user_id, name FROM users WHERE email = ? AND role = 'PATIENT' AND is_active = 1 AND email_verified_at IS NULL",
+        [userEmail]
+    );
+    if (rows.length) {
+        const { user_id: userId, name } = rows[0];
+        const [recent] = await pool.execute(
+            "SELECT 1 FROM email_verifications WHERE user_id = ? AND created_at > DATE_SUB(NOW(), INTERVAL ? SECOND) LIMIT 1",
+            [userId, resendCooldownSeconds()]
+        );
+        if (!recent.length) {
+            let rawToken = null;
+            await withTransaction(async (conn) => { rawToken = await issueVerificationToken(conn, userId); });
+            await sendVerificationLink(userEmail, rawToken, name);
+        }
+    }
+    return { sent: true };
 }
 
 function signToken(user) {
@@ -102,7 +188,7 @@ async function login(input, ip, userAgent = null) {
     const userEmail = email(input.email);
     if (typeof input.password !== "string" || !input.password) throw unauthorized("Invalid email or password");
     const [rows] = await pool.execute(
-        "SELECT u.user_id, u.name, u.email, u.password_hash, u.role, u.phone, u.is_active, ps.pharmacy_id FROM users u LEFT JOIN pharmacy_staff ps ON ps.user_id = u.user_id WHERE u.email = ?",
+        "SELECT u.user_id, u.name, u.email, u.password_hash, u.role, u.phone, u.is_active, u.email_verified_at, ps.pharmacy_id FROM users u LEFT JOIN pharmacy_staff ps ON ps.user_id = u.user_id WHERE u.email = ?",
         [userEmail]
     );
     const user = rows[0];
@@ -110,6 +196,12 @@ async function login(input, ip, userAgent = null) {
     if (!user || !user.is_active || !passwordOk) {
         await writeAudit({ userId: user ? user.user_id : null, action: "LOGIN_FAILED", entityType: "user", entityId: user ? user.user_id : null, ip }).catch(() => {});
         throw unauthorized("Invalid email or password");
+    }
+    // Only self-registered patients must confirm their email. Doctors, pharmacy staff and admins are created by an administrator.
+    // Checked after the password, so the message is only shown to someone who knows it.
+    if (user.role === "PATIENT" && !user.email_verified_at) {
+        await writeAudit({ userId: user.user_id, action: "LOGIN_BLOCKED_UNVERIFIED", entityType: "user", entityId: user.user_id, ip }).catch(() => {});
+        throw forbidden(UNVERIFIED_MESSAGE);
     }
     await writeAudit({ userId: user.user_id, action: "LOGIN", entityType: "user", entityId: user.user_id, ip }).catch(() => {});
 
@@ -274,7 +366,9 @@ module.exports = {
     getMe,
     login,
     register,
+    resendVerification,
     revokeRefreshToken,
     rotateRefreshToken,
-    updateProfile
+    updateProfile,
+    verifyEmail
 };

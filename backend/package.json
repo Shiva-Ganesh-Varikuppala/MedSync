@@ -8,6 +8,7 @@
     "dev": "nodemon src/server.js",
     "db:setup-test": "node scripts/setupTestDb.js",
     "db:migrate": "node scripts/migrate.js",
+    "smtp:check": "node scripts/checkSmtp.js",
     "db:set-password": "node scripts/setUserPassword.js",
     "dev:passwords": "node scripts/setDevPasswords.js",
     "test": "node --test test/*.test.js"

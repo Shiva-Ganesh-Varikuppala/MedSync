@@ -3,10 +3,13 @@ const controller = require("../controllers/authController");
 const { authenticate } = require("../middleware/auth");
 const { checkThrottle } = require("../middleware/loginThrottle");
 const { checkPasswordThrottle } = require("../middleware/passwordThrottle");
+const { registerLimit, resendLimit, verifyLimit } = require("../middleware/rateLimit");
 const asyncHandler = require("../utils/asyncHandler");
 
 const router = express.Router();
-router.post("/register", asyncHandler(controller.register));
+router.post("/register", registerLimit, asyncHandler(controller.register));
+router.post("/verify-email", verifyLimit, asyncHandler(controller.verifyEmail));
+router.post("/resend-verification", resendLimit, asyncHandler(controller.resendVerification));
 router.post("/login", checkThrottle, asyncHandler(controller.login));
 router.post("/refresh", asyncHandler(controller.refresh));
 router.post("/logout", asyncHandler(controller.logout));

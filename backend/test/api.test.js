@@ -10,6 +10,8 @@ const { setupTestDb } = require("../scripts/setupTestDb");
 
 const PASSWORD = "Test@12345";
 let server, base, pool, throttle;
+let sender, realSendVerification;
+const outbox = []; // verification emails "sent" during the tests (nothing real is ever sent)
 const tokens = {};
 
 async function call(method, url, { body, as } = {}) {
@@ -29,10 +31,15 @@ const p2 = (n) => String(n).padStart(2, "0");
 const inDays = (n) => { const d = new Date(); d.setDate(d.getDate() + n); return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`; };
 
 before(async () => {
+    // Tests must never use real mail or SMS accounts, even when backend/.env has them (e.g. the Gmail App Password).
+    for (const k of ["SMTP_HOST", "SMTP_PORT", "SMTP_SECURE", "SMTP_USER", "SMTP_PASS", "SMTP_FROM_NAME", "SMTP_FROM_EMAIL", "MAIL_FROM", "TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_FROM", "TWILIO_API_BASE"]) process.env[k] = ""; // empty, not deleted: the app's own dotenv call would otherwise load them again from .env
     process.env.DB_NAME = await setupTestDb(); // before the app loads the pool
     pool = require("../src/config/database");
     await pool.query("UPDATE users SET password_hash = ? WHERE user_id > 0", [await require("bcryptjs").hash(PASSWORD, 4)]);
     throttle = require("../src/middleware/loginThrottle");
+    sender = require("../src/services/messageSender");
+    realSendVerification = sender.sendVerificationEmail;
+    sender.sendVerificationEmail = async (to, token, name) => { outbox.push({ to, token, name }); };
     server = require("../src/app").listen(0);
     await new Promise((r) => server.once("listening", r));
     base = `http://127.0.0.1:${server.address().port}`;
@@ -340,6 +347,7 @@ test("profile: own details per role; edit name/phone (patients also address); ro
 test("password change: needs the current password, signs out older tokens, is audited and throttled", async () => {
     const reg = await call("POST", "/api/auth/register", { body: { name: "Pw Tester", email: "pw@medsync.dev", password: "Original@1", date_of_birth: "1999-01-01" } });
     assert.equal(reg.status, 201);
+    await pool.query("UPDATE users SET email_verified_at = NOW() WHERE email = 'pw@medsync.dev'"); // new patients must verify their email before signing in
     const first = await call("POST", "/api/auth/login", { body: { email: "pw@medsync.dev", password: "Original@1" } });
     tokens.pw = first.json.data.token;
     assert.equal((await call("PUT", "/api/auth/password", { body: { current_password: "Original@1", new_password: "Newer@123" } })).status, 401);
@@ -1170,4 +1178,250 @@ test("prescription templates: a doctor saves, lists and deletes their own; other
     assert.equal((await call("GET", "/api/templates", { as: "doc" })).json.data.length, 0);
     const [[left]] = await pool.query("SELECT COUNT(*) AS n FROM prescription_template_items WHERE template_id = ?", [id]);
     assert.equal(left.n, 0, "the items were deleted with the template");
+});
+
+// ---------------------------------------------------------------------------------------------
+// Email verification. No real email is sent: messageSender.sendVerificationEmail is replaced in before().
+// ---------------------------------------------------------------------------------------------
+const mailReg = (email, extra = {}) => call("POST", "/api/auth/register", { body: { name: "Mail Tester", email, password: "Strong@123", date_of_birth: "2000-01-15", ...extra } });
+const tokenFor = (email) => [...outbox].reverse().find((m) => m.to === email)?.token;
+const verifyCall = (token) => call("POST", "/api/auth/verify-email", { body: { token } });
+const verifiedAt = async (email) => (await pool.query("SELECT email_verified_at FROM users WHERE email = ?", [email]))[0][0].email_verified_at;
+
+test("email verification: new registration is pending, stores only a hashed 24-hour token, and mails the raw token once", async () => {
+    await require("../src/middleware/rateLimit").resetAllRateLimits();
+    outbox.length = 0;
+    const r = await mailReg("ev1@medsync.dev");
+    assert.equal(r.status, 201);
+    assert.equal(r.json.data.user.email_verified, false);
+    assert.ok(!JSON.stringify(r.json).includes(tokenFor("ev1@medsync.dev")), "the token is never in the API response");
+    assert.equal(await verifiedAt("ev1@medsync.dev"), null);
+    assert.equal(outbox.length, 1);
+    assert.equal(outbox[0].name, "Mail Tester");
+    const raw = outbox[0].token;
+    assert.match(raw, /^[0-9a-f]{64}$/);
+    const [rows] = await pool.query("SELECT token_hash, used_at, TIMESTAMPDIFF(MINUTE, NOW(), expires_at) AS mins FROM email_verifications v JOIN users u ON u.user_id = v.user_id WHERE u.email = 'ev1@medsync.dev'");
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].token_hash, require("node:crypto").createHash("sha256").update(raw).digest("hex"), "the SHA-256 of the token is stored");
+    assert.notEqual(rows[0].token_hash, raw);
+    assert.equal(rows[0].used_at, null);
+    assert.ok(rows[0].mins > 23 * 60 && rows[0].mins <= 24 * 60, "valid for 24 hours");
+    const [[plain]] = await pool.query("SELECT COUNT(*) AS n FROM email_verifications WHERE token_hash = ?", [raw]);
+    assert.equal(plain.n, 0, "the raw token is not stored");
+});
+
+test("email verification: the email is built with the link, HTML and plain text, and sent through SMTP settings from the environment (mocked)", async () => {
+    const nodemailer = require("nodemailer");
+    const realCreate = nodemailer.createTransport;
+    const saved = {};
+    const keys = ["SMTP_HOST", "SMTP_PORT", "SMTP_SECURE", "SMTP_USER", "SMTP_PASS", "SMTP_FROM_NAME", "SMTP_FROM_EMAIL", "FRONTEND_URL", "MAIL_FROM"];
+    for (const k of keys) saved[k] = process.env[k];
+    Object.assign(process.env, { SMTP_HOST: "smtp.example.test", SMTP_PORT: "587", SMTP_SECURE: "false", SMTP_USER: "sender@example.test", SMTP_PASS: "unit-test-pass-123", SMTP_FROM_NAME: "MedSync Team", SMTP_FROM_EMAIL: "sender@example.test", FRONTEND_URL: "https://app.example.test/" });
+    delete process.env.MAIL_FROM;
+    const sentMail = []; let options;
+    nodemailer.createTransport = (o) => { options = o; return { sendMail: async (m) => { sentMail.push(m); }, verify: async () => true }; };
+    try {
+        await realSendVerification("patient@example.test", "abc123token", "Asha <b>");
+        assert.equal(sentMail.length, 1);
+        const m = sentMail[0];
+        assert.equal(m.to, "patient@example.test");
+        assert.deepEqual(m.from, { name: "MedSync Team", address: "sender@example.test" });
+        assert.match(m.subject, /verify/i);
+        for (const body of [m.html, m.text]) assert.ok(body.includes("https://app.example.test/verify-email?token=abc123token"), "has the link");
+        assert.ok(m.html.includes("Verify Email") && m.html.includes("24 hours") && m.html.includes("viewport"), "branded, responsive HTML");
+        assert.ok(!m.html.includes("Asha <b>") && m.html.includes("Asha &lt;b&gt;"), "the name is escaped");
+        assert.match(m.text, /24 hours/);
+        assert.match(m.text, /did not (create|register)|didn't (create|register)|ignore/i);
+        assert.equal(options.host, "smtp.example.test");
+        assert.equal(options.requireTLS, true, "port 587 must use STARTTLS");
+        assert.deepEqual(options.auth, { user: "sender@example.test", pass: "unit-test-pass-123" });
+    } finally {
+        nodemailer.createTransport = realCreate;
+        for (const k of keys) { if (saved[k] === undefined) delete process.env[k]; else process.env[k] = saved[k]; }
+    }
+});
+
+test("email verification: a valid token verifies once; the same link again says 'already used'", async () => {
+    outbox.length = 0;
+    assert.equal((await mailReg("ev2@medsync.dev")).status, 201);
+    const token = tokenFor("ev2@medsync.dev");
+    const ok = await verifyCall(token);
+    assert.equal(ok.status, 200);
+    assert.equal(ok.json.data.verified, true);
+    assert.ok(await verifiedAt("ev2@medsync.dev"), "email_verified_at is set");
+    const [[row]] = await pool.query("SELECT used_at FROM email_verifications WHERE token_hash = SHA2(?, 256)", [token]);
+    assert.ok(row.used_at, "the token is consumed");
+    const [[audit]] = await pool.query("SELECT COUNT(*) AS n FROM audit_logs WHERE action = 'EMAIL_VERIFIED'");
+    assert.ok(audit.n >= 1);
+    assert.equal((await verifyCall(token)).status, 409, "reused token");
+});
+
+test("email verification: invalid, malformed and missing tokens are rejected; GET never verifies", async () => {
+    assert.equal((await verifyCall(require("node:crypto").randomBytes(32).toString("hex"))).status, 400, "unknown token");
+    assert.equal((await verifyCall("short")).status, 400);
+    assert.equal((await verifyCall(undefined)).status, 400);
+    assert.equal((await verifyCall({ $ne: 1 })).status, 400, "not a string");
+    outbox.length = 0;
+    await mailReg("ev3@medsync.dev");
+    const token = tokenFor("ev3@medsync.dev");
+    const viaGet = await call("GET", `/api/auth/verify-email?token=${token}`);
+    assert.notEqual(viaGet.status, 200, "a link opened by a mail scanner must not verify");
+    assert.equal(await verifiedAt("ev3@medsync.dev"), null);
+    assert.equal((await call("POST", `/api/auth/verify-email?token=${token}`)).status, 400, "the token must be in the body, not the URL");
+    assert.equal(await verifiedAt("ev3@medsync.dev"), null);
+});
+
+test("email verification: an expired token is refused (410) and does not verify", async () => {
+    outbox.length = 0;
+    await mailReg("ev4@medsync.dev");
+    const token = tokenFor("ev4@medsync.dev");
+    await pool.query("UPDATE email_verifications SET expires_at = DATE_SUB(NOW(), INTERVAL 1 MINUTE) WHERE token_hash = SHA2(?, 256)", [token]);
+    assert.equal((await verifyCall(token)).status, 410);
+    assert.equal(await verifiedAt("ev4@medsync.dev"), null);
+    const [[row]] = await pool.query("SELECT used_at FROM email_verifications WHERE token_hash = SHA2(?, 256)", [token]);
+    assert.equal(row.used_at, null);
+});
+
+test("email verification: an unverified patient cannot sign in; after verifying they can; the lock is not a password-guess lockout", async () => {
+    await throttle.resetAllThrottles();
+    outbox.length = 0;
+    await mailReg("ev5@medsync.dev");
+    for (let i = 0; i < 6; i++) {
+        const r = await call("POST", "/api/auth/login", { body: { email: "ev5@medsync.dev", password: "Strong@123" } });
+        assert.equal(r.status, 403, "blocked with a clear message, never throttled to 429");
+        assert.match(r.json.message, /verify your email/i);
+    }
+    assert.equal((await call("POST", "/api/auth/login", { body: { email: "ev5@medsync.dev", password: "Wrong@1234" } })).status, 401, "a wrong password does not reveal the account state");
+    assert.equal((await verifyCall(tokenFor("ev5@medsync.dev"))).status, 200);
+    const ok = await call("POST", "/api/auth/login", { body: { email: "ev5@medsync.dev", password: "Strong@123" } });
+    assert.equal(ok.status, 200);
+    assert.equal(ok.json.data.user.role, "PATIENT");
+    await throttle.resetAllThrottles();
+});
+
+test("email verification: existing verified patients, doctors, pharmacy staff and admins sign in as before", async () => {
+    await throttle.resetAllThrottles();
+    const [[{ n }]] = await pool.query("SELECT COUNT(*) AS n FROM users WHERE email = 'arjun.kumar@medsync.dev' AND email_verified_at IS NOT NULL");
+    assert.equal(n, 1, "the migration verified existing accounts");
+    for (const email of ["arjun.kumar@medsync.dev", "ananya.rao@medsync.dev", "neha.patel@medsync.dev", "admin@medsync.dev"]) {
+        assert.equal((await call("POST", "/api/auth/login", { body: { email, password: PASSWORD } })).status, 200, email);
+    }
+    // Staff accounts are made by an administrator and are never held back, even without a verified date.
+    await pool.query("UPDATE users SET email_verified_at = NULL WHERE email IN ('ananya.rao@medsync.dev','neha.patel@medsync.dev','admin@medsync.dev')");
+    try {
+        for (const email of ["ananya.rao@medsync.dev", "neha.patel@medsync.dev", "admin@medsync.dev"]) {
+            assert.equal((await call("POST", "/api/auth/login", { body: { email, password: PASSWORD } })).status, 200, `${email} (no verified date)`);
+        }
+    } finally {
+        await pool.query("UPDATE users SET email_verified_at = NOW() WHERE email_verified_at IS NULL AND email IN ('ananya.rao@medsync.dev','neha.patel@medsync.dev','admin@medsync.dev')");
+    }
+    await throttle.resetAllThrottles();
+});
+
+test("email verification: resend replaces the old link, waits between sends, and never reveals whether an account exists", async () => {
+    await require("../src/middleware/rateLimit").resetAllRateLimits();
+    outbox.length = 0;
+    await mailReg("ev6@medsync.dev");
+    const first = tokenFor("ev6@medsync.dev");
+    const resend = (email) => call("POST", "/api/auth/resend-verification", { body: { email } });
+
+    const tooSoon = await resend("ev6@medsync.dev");
+    assert.equal(tooSoon.status, 200);
+    assert.equal(outbox.filter((m) => m.to === "ev6@medsync.dev").length, 1, "no second email inside the cooldown");
+
+    await pool.query("UPDATE email_verifications SET created_at = DATE_SUB(NOW(), INTERVAL 5 MINUTE)");
+    const again = await resend("EV6@medsync.dev");
+    assert.equal(again.status, 200);
+    const second = tokenFor("ev6@medsync.dev");
+    assert.notEqual(second, first);
+    assert.equal(outbox.filter((m) => m.to === "ev6@medsync.dev").length, 2);
+    assert.equal((await verifyCall(first)).status, 400, "the older link no longer works");
+    const [[{ active }]] = await pool.query("SELECT COUNT(*) AS active FROM email_verifications v JOIN users u ON u.user_id = v.user_id WHERE u.email = 'ev6@medsync.dev' AND v.used_at IS NULL");
+    assert.equal(active, 1, "only one active token");
+
+    const before = outbox.length;
+    const unknown = await resend("nobody-here@medsync.dev");
+    const verifiedPatient = await resend("arjun.kumar@medsync.dev");
+    const doctor = await resend("ananya.rao@medsync.dev");
+    for (const x of [unknown, verifiedPatient, doctor]) { assert.equal(x.status, 200); assert.deepEqual(x.json, again.json, "same answer for every address"); }
+    assert.equal(outbox.length, before, "nothing was sent for unknown, verified or staff addresses");
+    assert.equal((await resend("not-an-email")).status, 400);
+
+    assert.equal((await verifyCall(second)).status, 200);
+    assert.equal((await resend("ev6@medsync.dev")).status, 200);
+    assert.equal(outbox.length, before, "nothing is sent once verified");
+});
+
+test("email verification: resend and registration are rate limited", async () => {
+    await require("../src/middleware/rateLimit").resetAllRateLimits();
+    const resend = () => call("POST", "/api/auth/resend-verification", { body: { email: "limit@medsync.dev" } });
+    for (let i = 0; i < 5; i++) assert.equal((await resend()).status, 200);
+    assert.equal((await resend()).status, 429);
+    assert.equal((await call("POST", "/api/auth/resend-verification", { body: { email: "other@medsync.dev" } })).status, 200, "another address is counted separately");
+    await require("../src/middleware/rateLimit").resetAllRateLimits();
+    let last;
+    for (let i = 0; i < 21; i++) last = await call("POST", "/api/auth/register", { body: { name: "x", email: "bad" } }); // invalid on purpose: fast
+    assert.equal(last.status, 429);
+    await require("../src/middleware/rateLimit").resetAllRateLimits();
+});
+
+test("email verification: duplicate registration is refused and leaves one account", async () => {
+    await require("../src/middleware/rateLimit").resetAllRateLimits();
+    assert.equal((await mailReg("ev7@medsync.dev")).status, 201);
+    assert.equal((await mailReg("ev7@medsync.dev")).status, 400);
+    assert.equal((await mailReg("EV7@Medsync.dev")).status, 400, "upper case is the same address");
+    assert.equal((await mailReg("arjun.kumar@medsync.dev")).status, 400, "an existing account");
+    const [[{ n }]] = await pool.query("SELECT COUNT(*) AS n FROM users WHERE email = 'ev7@medsync.dev'");
+    assert.equal(n, 1);
+    const [[{ t }]] = await pool.query("SELECT COUNT(*) AS t FROM email_verifications v JOIN users u ON u.user_id = v.user_id WHERE u.email = 'ev7@medsync.dev'");
+    assert.equal(t, 1, "one token, not one per attempt");
+});
+
+test("email verification: when email cannot be sent the account is still created, and the SMTP check never shows the password", async () => {
+    const nodemailer = require("nodemailer");
+    const realCreate = nodemailer.createTransport;
+    const keys = ["SMTP_HOST", "SMTP_PORT", "SMTP_SECURE", "SMTP_USER", "SMTP_PASS"];
+    const saved = {};
+    for (const k of keys) saved[k] = process.env[k];
+    const warn = console.warn; const warned = [];
+    try {
+        await require("../src/middleware/rateLimit").resetAllRateLimits();
+        // 1. nothing configured: the real sender refuses, registration still succeeds and says the email was not sent
+        for (const k of keys) delete process.env[k];
+        sender.sendVerificationEmail = realSendVerification;
+        console.warn = (...a) => warned.push(a.join(" "));
+        const r = await mailReg("ev8@medsync.dev");
+        assert.equal(r.status, 201);
+        assert.equal(r.json.data.user.verification_email_sent, false);
+        assert.equal(await verifiedAt("ev8@medsync.dev"), null);
+        assert.ok(!warned.join(" ").match(/[0-9a-f]{64}/), "no token in the logs");
+        const [[tok]] = await pool.query("SELECT COUNT(*) AS n FROM email_verifications v JOIN users u ON u.user_id = v.user_id WHERE u.email = 'ev8@medsync.dev'");
+        assert.equal(tok.n, 1, "a token exists, so a later resend can work");
+        assert.deepEqual((await sender.verifySmtp()).configured, false);
+        assert.equal((await sender.verifySmtp()).ok, false);
+
+        // 2. configured but the server rejects the login: the problem is reported without the password
+        Object.assign(process.env, { SMTP_HOST: "smtp.example.test", SMTP_PORT: "465", SMTP_SECURE: "true", SMTP_USER: "sender@example.test", SMTP_PASS: "super-secret-app-pass" });
+        nodemailer.createTransport = () => ({ verify: async () => { throw new Error("Invalid login: 535 for super-secret-app-pass"); }, sendMail: async () => { throw new Error("nope"); } });
+        const check = await sender.verifySmtp();
+        assert.equal(check.ok, false);
+        assert.equal(check.sign_in_set, true);
+        assert.ok(!JSON.stringify(check).includes("super-secret-app-pass"), "the password is never in the result");
+        const failed = await mailReg("ev9@medsync.dev");
+        assert.equal(failed.status, 201, "a mail server problem never blocks sign-up");
+        assert.equal(failed.json.data.user.verification_email_sent, false);
+        assert.ok(!warned.join(" ").includes("super-secret-app-pass"), "the password is never logged");
+
+        // 3. half configured
+        delete process.env.SMTP_PASS;
+        const half = await sender.verifySmtp();
+        assert.equal(half.ok, false);
+        assert.match(half.problem, /SMTP_USER and SMTP_PASS/);
+    } finally {
+        console.warn = warn;
+        nodemailer.createTransport = realCreate;
+        sender.sendVerificationEmail = async (to, token, name) => { outbox.push({ to, token, name }); };
+        for (const k of keys) { if (saved[k] === undefined) delete process.env[k]; else process.env[k] = saved[k]; }
+        await require("../src/middleware/rateLimit").resetAllRateLimits();
+    }
 });

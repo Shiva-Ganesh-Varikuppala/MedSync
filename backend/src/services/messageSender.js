@@ -1,7 +1,7 @@
 // Sends real email (SMTP) and SMS (Twilio). Each is switched on only by settings in .env;
 // with nothing configured MedSync keeps working and notices stay inside the app.
 //
-//   Email:  SMTP_HOST  [SMTP_PORT=587]  [SMTP_SECURE=true for port 465]  [SMTP_USER  SMTP_PASS]  [MAIL_FROM]
+//   Email:  SMTP_HOST  [SMTP_PORT=587]  [SMTP_SECURE=true for port 465]  [SMTP_USER  SMTP_PASS]  [SMTP_FROM_NAME  SMTP_FROM_EMAIL | MAIL_FROM]  [FRONTEND_URL]
 //   SMS:    TWILIO_ACCOUNT_SID  TWILIO_AUTH_TOKEN  TWILIO_FROM  [DEFAULT_COUNTRY_CODE=+91]
 const env = (k) => (process.env[k] || "").trim();
 
@@ -11,24 +11,34 @@ const smsConfigured = () => Boolean(env("TWILIO_ACCOUNT_SID") && env("TWILIO_AUT
 // What is switched on, without any secret in it.
 function status() {
     return {
-        email: { configured: emailConfigured(), host: emailConfigured() ? env("SMTP_HOST") : null, from: emailConfigured() ? mailFrom() : null },
+        email: { configured: emailConfigured(), host: emailConfigured() ? env("SMTP_HOST") : null, from: emailConfigured() ? mailFromText() : null },
         sms: { configured: smsConfigured(), from: smsConfigured() ? env("TWILIO_FROM") : null }
     };
 }
 
-const mailFrom = () => env("MAIL_FROM") || env("SMTP_USER") || "MedSync <no-reply@medsync.local>";
+// Sender: SMTP_FROM_NAME + SMTP_FROM_EMAIL, else the older MAIL_FROM, else the SMTP user.
+const mailFrom = () => {
+    const address = env("SMTP_FROM_EMAIL");
+    if (address) return { name: env("SMTP_FROM_NAME") || "MedSync", address };
+    return env("MAIL_FROM") || env("SMTP_USER") || "MedSync <no-reply@medsync.local>";
+};
+const mailFromText = () => { const f = mailFrom(); return typeof f === "string" ? f : `${f.name} <${f.address}>`; };
+
+// Where links in emails point (the website, not the API).
+const frontendUrl = () => (env("FRONTEND_URL") || env("APP_URL") || "http://localhost:5173").replace(/\/+$/, "");
 
 let cached = { key: null, transport: null };
 function transport() {
     let nodemailer;
     try { nodemailer = require("nodemailer"); } catch (_) { throw new Error("Email is set up but the 'nodemailer' package is missing. Run: npm install nodemailer"); }
     const cfg = { host: env("SMTP_HOST"), port: Number(env("SMTP_PORT")) || 587, secure: env("SMTP_SECURE") === "true", user: env("SMTP_USER"), pass: env("SMTP_PASS") };
+    const startTls = !cfg.secure && cfg.port === 587; // never fall back to an unencrypted login on 587
     const key = JSON.stringify(cfg);
     if (cached.key !== key) {
         cached = {
             key,
             transport: nodemailer.createTransport({
-                host: cfg.host, port: cfg.port, secure: cfg.secure,
+                host: cfg.host, port: cfg.port, secure: cfg.secure, ...(startTls ? { requireTLS: true } : {}),
                 ...(cfg.user ? { auth: { user: cfg.user, pass: cfg.pass } } : {}),
                 connectionTimeout: 8000, greetingTimeout: 8000, socketTimeout: 12000
             })
@@ -37,10 +47,36 @@ function transport() {
     return cached.transport;
 }
 
-async function sendEmail({ to, subject, text }) {
+async function sendEmail({ to, subject, text, html }) {
     if (!emailConfigured()) throw new Error("Email is not set up on the server");
     if (typeof to !== "string" || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) throw new Error("No valid email address on file");
-    await transport().sendMail({ from: mailFrom(), to, subject, text });
+    await transport().sendMail({ from: mailFrom(), to, subject, text, ...(html ? { html } : {}) });
+}
+
+// Checks the SMTP settings by connecting and signing in (no email is sent).
+// The answer never contains the password.
+async function verifySmtp() {
+    const out = { ok: false, configured: emailConfigured(), host: env("SMTP_HOST") || null, port: Number(env("SMTP_PORT")) || 587, secure: env("SMTP_SECURE") === "true", sign_in_set: Boolean(env("SMTP_USER") && env("SMTP_PASS")), from: emailConfigured() ? mailFromText() : null, problem: null };
+    if (!out.configured) { out.problem = "SMTP_HOST is not set"; return out; }
+    if (!out.sign_in_set) { out.problem = "SMTP_USER and SMTP_PASS must both be set"; return out; }
+    try {
+        await transport().verify();
+        out.ok = true;
+    } catch (e) {
+        const pass = env("SMTP_PASS");
+        let msg = String(e && e.message || "connection failed");
+        if (pass) msg = msg.split(pass).join("***");
+        out.problem = msg.slice(0, 200);
+    }
+    return out;
+}
+
+// The sign-up confirmation. The link carries the raw token, so neither is ever logged.
+async function sendVerificationEmail(toEmail, rawToken, name) {
+    const { buildVerificationEmail } = require("../utils/verificationEmail");
+    const link = `${frontendUrl()}/verify-email?token=${encodeURIComponent(rawToken)}`;
+    const { subject, text, html } = buildVerificationEmail({ name, link });
+    await sendEmail({ to: toEmail, subject, text, html });
 }
 
 // 98765 43210, 098765-43210, +91 98765 43210, 0091... -> +919876543210
@@ -74,4 +110,4 @@ async function sendSms({ to, text }) {
     }
 }
 
-module.exports = { emailConfigured, smsConfigured, status, sendEmail, sendSms, normalizePhone };
+module.exports = { emailConfigured, smsConfigured, status, sendEmail, sendSms, normalizePhone, verifySmtp, sendVerificationEmail, frontendUrl };
