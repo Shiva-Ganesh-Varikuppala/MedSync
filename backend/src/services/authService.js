@@ -304,7 +304,7 @@ async function revokeRefreshToken(rawToken, userId) {
 
 async function getMe(userId) {
     const [rows] = await pool.execute(
-        `SELECT u.user_id, u.name, u.email, u.role, u.phone, ps.pharmacy_id,
+        `SELECT u.user_id, u.name, u.email, u.role, u.phone, u.phone_verified_at, ps.pharmacy_id,
                 p.date_of_birth, p.gender, p.address,
                 d.license_number, d.specialization,
                 ph.name AS pharmacy_name, ph.address AS pharmacy_address
@@ -319,6 +319,7 @@ async function getMe(userId) {
     if (!rows.length) throw unauthorized();
     const r = rows[0];
     const user = safeUser(r);
+    user.phone_verified = Boolean(r.phone && r.phone_verified_at);
     if (r.role === "PATIENT") user.profile = { date_of_birth: r.date_of_birth, gender: r.gender, address: r.address };
     if (r.role === "DOCTOR") user.profile = { license_number: r.license_number, specialization: r.specialization };
     if (r.role === "PHARMACY_STAFF") user.profile = { pharmacy_name: r.pharmacy_name, pharmacy_address: r.pharmacy_address };
@@ -329,7 +330,11 @@ async function updateProfile(userId, role, input, ip) {
     const name = toText(input.name, "name", { max: 100 });
     const phone = toText(input.phone, "phone", { max: 20, required: false });
     await withTransaction(async (conn) => {
-        await conn.execute("UPDATE users SET name = ?, phone = ? WHERE user_id = ?", [name, phone, userId]);
+        // A different phone number is no longer verified. The same number written differently (spaces, +91) stays verified.
+        const [[old]] = await conn.execute("SELECT phone, phone_verified_at FROM users WHERE user_id = ?", [userId]);
+        const normal = (p) => { try { return messageSender.normalizePhone(p); } catch { return null; } };
+        const samePhone = old && old.phone_verified_at && phone && normal(old.phone) && normal(old.phone) === normal(phone);
+        await conn.execute("UPDATE users SET name = ?, phone = ?, phone_verified_at = ? WHERE user_id = ?", [name, phone, samePhone ? old.phone_verified_at : null, userId]);
         if (role === "PATIENT") {
             await conn.execute("UPDATE patients SET date_of_birth = ?, gender = ?, address = ? WHERE user_id = ?", [
                 toDate(input.date_of_birth, "date_of_birth"), toText(input.gender, "gender", { max: 30, required: false }), toText(input.address, "address", { max: 255, required: false }), userId

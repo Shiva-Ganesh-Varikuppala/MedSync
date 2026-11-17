@@ -110,4 +110,9 @@ async function sendSms({ to, text }) {
     }
 }
 
-module.exports = { emailConfigured, smsConfigured, status, sendEmail, sendSms, normalizePhone, verifySmtp, sendVerificationEmail, frontendUrl };
+// The phone-verification text. The code is never logged here.
+async function sendVerificationSms(toPhone, code) {
+    await sendSms({ to: toPhone, text: `MedSync: your verification code is ${code}. It expires in 10 minutes. Do not share it with anyone.` });
+}
+
+module.exports = { emailConfigured, smsConfigured, status, sendEmail, sendSms, normalizePhone, verifySmtp, sendVerificationEmail, sendVerificationSms, frontendUrl };

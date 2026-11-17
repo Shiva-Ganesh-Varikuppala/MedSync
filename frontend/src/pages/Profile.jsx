@@ -20,7 +20,8 @@ export default function Profile({ onClose }) {
       <Notice error={error} />
       {me && (
         <section className="grid">
-          <Details me={me} onSaved={saved} />
+          <Details key={`${me.phone}|${me.phone_verified}`} me={me} onSaved={saved} />
+          <PhoneVerify me={me} onVerified={saved} />
           <Password />
           {me.role === "PATIENT" && <MyData />}
         </section>
@@ -65,6 +66,55 @@ function Details({ me, onSaved }) {
         <Notice {...note} />
         <button>Save changes</button>
       </form>
+    </Panel>
+  );
+}
+
+// Optional: confirm a phone number with a 6-digit SMS code. Nothing is blocked if it is skipped.
+function PhoneVerify({ me, onVerified }) {
+  const { call } = useAuth();
+  const [phone, setPhone] = useState(me.phone || "");
+  const [sent, setSent] = useState(null);   // { phone, delivery } once a code is on its way
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState("");
+  const [note, setNote] = useState({});
+
+  async function send(e) {
+    e?.preventDefault();
+    setBusy("send"); setNote({});
+    try {
+      const r = await call("/auth/phone/send-code", { method: "POST", body: { phone: phone.trim() || undefined } });
+      setSent(r.data); setCode("");
+      setNote({ success: r.data.delivery === "console" ? "SMS is not set up on this server (development): the code is printed in the backend terminal." : `We sent a 6-digit code to ${r.data.phone}. It works for ${r.data.expires_in_minutes} minutes.` });
+    } catch (err) { setNote({ error: err.message }); } finally { setBusy(""); }
+  }
+
+  async function confirm(e) {
+    e.preventDefault();
+    setBusy("verify"); setNote({});
+    try {
+      await call("/auth/phone/verify", { method: "POST", body: { code: code.trim() } });
+      const r = await call("/auth/me");
+      onVerified(r.data.user);
+    } catch (err) { setNote({ error: err.message }); } finally { setBusy(""); }
+  }
+
+  return (
+    <Panel title="Phone verification">
+      {me.phone_verified ? (
+        <p className="success" role="status">Verified: {me.phone}</p>
+      ) : (
+        <>
+          <p className="muted small">Optional. Confirm your phone number with a code sent by SMS. If you change the number later, it needs to be verified again.</p>
+          <form className="form" onSubmit={sent ? confirm : send}>
+            <label>Phone number<input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+91 98765 43210" disabled={!!sent && busy !== ""} /></label>
+            {sent && <label>6-digit code<input value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))} inputMode="numeric" autoComplete="one-time-code" maxLength={6} required /></label>}
+            <Notice {...note} />
+            <button disabled={!!busy || (!sent && !phone.trim())}>{busy === "send" ? "Sending…" : busy === "verify" ? "Checking…" : sent ? "Verify code" : "Send code"}</button>
+            {sent && <button type="button" className="link" disabled={!!busy} onClick={send}>Send a new code</button>}
+          </form>
+        </>
+      )}
     </Panel>
   );
 }

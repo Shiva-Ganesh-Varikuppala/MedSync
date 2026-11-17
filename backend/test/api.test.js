@@ -10,7 +10,8 @@ const { setupTestDb } = require("../scripts/setupTestDb");
 
 const PASSWORD = "Test@12345";
 let server, base, pool, throttle;
-let sender, realSendVerification;
+let sender, realSendVerification, realSendVerificationSms;
+const smsOutbox = []; // verification SMS "sent" during the tests
 const outbox = []; // verification emails "sent" during the tests (nothing real is ever sent)
 const tokens = {};
 
@@ -40,6 +41,8 @@ before(async () => {
     sender = require("../src/services/messageSender");
     realSendVerification = sender.sendVerificationEmail;
     sender.sendVerificationEmail = async (to, token, name) => { outbox.push({ to, token, name }); };
+    realSendVerificationSms = sender.sendVerificationSms;
+    sender.sendVerificationSms = async (to, code) => { smsOutbox.push({ to, code }); };
     server = require("../src/app").listen(0);
     await new Promise((r) => server.once("listening", r));
     base = `http://127.0.0.1:${server.address().port}`;
@@ -1491,4 +1494,107 @@ test("admin delete: needs the typed email; removes a doctor, a patient and pharm
     assert.equal(logs.length, 3);
     assert.ok(logs.every((l) => l.user_id === adminId));
     assert.ok(logs.some((l) => /dr\.remove@medsync\.dev/.test(l.details)));
+});
+
+// ---------------------------------------------------------------------------------------------
+// Phone verification (optional, from My profile). No real SMS is sent.
+// ---------------------------------------------------------------------------------------------
+test("phone verification: code by SMS, stored hashed, wrong codes counted, right code verifies; changing the number un-verifies it", async () => {
+    const limits = require("../src/middleware/rateLimit");
+    await limits.resetAllRateLimits();
+    smsOutbox.length = 0;
+    const send = (body, as = "pat2") => call("POST", "/api/auth/phone/send-code", { as, body });
+    const check = (code, as = "pat2") => call("POST", "/api/auth/phone/verify", { as, body: { code } });
+    const me = async () => (await call("GET", "/api/auth/me", { as: "pat2" })).json.data.user;
+    const backdate = () => pool.query("UPDATE phone_verifications SET created_at = DATE_SUB(NOW(), INTERVAL 5 MINUTE)");
+
+    assert.equal((await call("POST", "/api/auth/phone/send-code", { body: {} })).status, 401, "sign-in needed");
+    await pool.query("UPDATE users SET phone = NULL, phone_verified_at = NULL WHERE email = 'priya.sharma@medsync.dev'");
+    assert.equal((await send({})).status, 400, "no number anywhere");
+    assert.equal((await send({ phone: "abc" })).status, 400, "not a number");
+    assert.equal((await me()).phone_verified, false);
+
+    const first = await send({ phone: "98765 43210" });
+    assert.equal(first.status, 200);
+    assert.equal(first.json.data.delivery, "sms");
+    assert.match(first.json.data.phone, /^\+91\*+3210$/, "the number is masked in the answer");
+    assert.equal(smsOutbox.length, 1);
+    assert.equal(smsOutbox[0].to, "+919876543210");
+    const code = smsOutbox[0].code;
+    assert.match(code, /^\d{6}$/);
+    assert.ok(!JSON.stringify(first.json).includes(code), "the code is never in the API answer");
+    const [[row]] = await pool.query("SELECT code_hash, attempts, TIMESTAMPDIFF(MINUTE, NOW(), expires_at) AS mins FROM phone_verifications ORDER BY id DESC LIMIT 1");
+    assert.notEqual(row.code_hash, code);
+    assert.match(row.code_hash, /^[0-9a-f]{64}$/);
+    assert.ok(row.mins >= 9 && row.mins <= 10, "valid for 10 minutes");
+    assert.equal((await send({ phone: "98765 43210" })).status, 429, "one code a minute");
+
+    const wrong = code === "000000" ? "111111" : "000000";
+    assert.equal((await check(wrong)).status, 400);
+    assert.equal((await check("12")).status, 400, "must be 6 digits");
+    assert.equal((await check(undefined)).status, 400);
+    assert.equal((await pool.query("SELECT attempts FROM phone_verifications ORDER BY id DESC LIMIT 1"))[0][0].attempts, 1, "the wrong code was counted");
+    assert.equal((await me()).phone_verified, false);
+    assert.equal((await check(code, "pat1")).status, 400, "another person's code does not work");
+
+    const ok = await check(code);
+    assert.equal(ok.status, 200);
+    const verified = await me();
+    assert.equal(verified.phone_verified, true);
+    assert.equal(verified.phone, "+919876543210");
+    assert.equal((await check(code)).status, 400, "a code works once");
+
+    // the same number written another way stays verified; a different number does not
+    const profile = (phone) => call("PUT", "/api/auth/me", { as: "pat2", body: { name: "Priya Sharma", phone, date_of_birth: "1992-05-05" } });
+    assert.equal((await profile("+91 98765-43210")).json.data.user.phone_verified, true);
+    assert.equal((await profile("98765 00000")).json.data.user.phone_verified, false);
+
+    // expired and too many wrong tries
+    await backdate(); await limits.resetAllRateLimits();
+    assert.equal((await send({ phone: "98765 00000" })).status, 200);
+    const c2 = smsOutbox[smsOutbox.length - 1].code;
+    await pool.query("UPDATE phone_verifications SET expires_at = DATE_SUB(NOW(), INTERVAL 1 MINUTE) ORDER BY id DESC LIMIT 1");
+    assert.equal((await check(c2)).status, 410, "expired");
+    await backdate(); await limits.resetAllRateLimits();
+    assert.equal((await send({ phone: "98765 00000" })).status, 200);
+    const c3 = smsOutbox[smsOutbox.length - 1].code;
+    const bad = c3 === "123456" ? "654321" : "123456";
+    for (let i = 0; i < 5; i++) assert.equal((await check(bad)).status, 400);
+    assert.equal((await check(c3)).status, 429, "locked after 5 wrong codes, even for the right one");
+    assert.equal((await me()).phone_verified, false);
+    await limits.resetAllRateLimits();
+});
+
+test("phone verification: without an SMS provider the code is printed only in the server terminal (development); in production it is refused", async () => {
+    const limits = require("../src/middleware/rateLimit");
+    await limits.resetAllRateLimits();
+    await pool.query("UPDATE phone_verifications SET created_at = DATE_SUB(NOW(), INTERVAL 5 MINUTE)");
+    const log = console.log, nodeEnv = process.env.NODE_ENV;
+    const lines = [];
+    sender.sendVerificationSms = realSendVerificationSms; // the real one: Twilio is not configured here
+    try {
+        console.log = (...a) => lines.push(a.join(" "));
+        process.env.NODE_ENV = "development";
+        const r = await call("POST", "/api/auth/phone/send-code", { as: "pat2", body: { phone: "98765 43211" } });
+        assert.equal(r.status, 200);
+        assert.equal(r.json.data.delivery, "console");
+        const printed = lines.join("\n").match(/is (\d{6}) /);
+        assert.ok(printed, "the code is in the terminal output");
+        assert.ok(!JSON.stringify(r.json).includes(printed[1]), "but never in the answer sent to the browser");
+        assert.equal((await call("POST", "/api/auth/phone/verify", { as: "pat2", body: { code: printed[1] } })).status, 200);
+
+        await pool.query("UPDATE phone_verifications SET created_at = DATE_SUB(NOW(), INTERVAL 5 MINUTE)");
+        await limits.resetAllRateLimits();
+        lines.length = 0;
+        process.env.NODE_ENV = "production";
+        const prod = await call("POST", "/api/auth/phone/send-code", { as: "pat2", body: { phone: "98765 43212" } });
+        assert.equal(prod.status, 503);
+        assert.ok(!lines.join("\n").match(/\d{6}/), "nothing is printed in production");
+        assert.equal((await pool.query("SELECT COUNT(*) AS n FROM phone_verifications WHERE used_at IS NULL"))[0][0].n, 0, "no unusable code is left behind");
+    } finally {
+        console.log = log;
+        if (nodeEnv === undefined) delete process.env.NODE_ENV; else process.env.NODE_ENV = nodeEnv;
+        sender.sendVerificationSms = async (to, code) => { smsOutbox.push({ to, code }); };
+        await limits.resetAllRateLimits();
+    }
 });

@@ -1,4 +1,5 @@
 const authService = require("../services/authService");
+const phoneService = require("../services/phoneService");
 const { clearFailures, recordFailure } = require("../middleware/loginThrottle");
 const { clearPasswordFailures, recordPasswordFailure } = require("../middleware/passwordThrottle");
 
@@ -87,6 +88,16 @@ async function updateMe(req, res) {
     res.json({ success: true, message: "Profile updated successfully", data: { user } });
 }
 
+async function sendPhoneCode(req, res) {
+    const data = await phoneService.start(req.user.id, req.body || {}, req.ip);
+    res.json({ success: true, message: data.delivery === "console" ? "SMS is not set up; the code was printed in the server terminal (development only)." : "A verification code was sent by SMS.", data });
+}
+
+async function verifyPhone(req, res) {
+    const data = await phoneService.confirm(req.user.id, req.body || {}, req.ip);
+    res.json({ success: true, message: "Your phone number is verified.", data });
+}
+
 async function changePassword(req, res) {
     try {
         const data = await authService.changePassword(req.user.id, req.body || {}, req.ip);
@@ -107,6 +118,8 @@ module.exports = {
     refresh,
     register,
     resendVerification,
+    sendPhoneCode,
     updateMe,
+    verifyPhone,
     verifyEmail
 };

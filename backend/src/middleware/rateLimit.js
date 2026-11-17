@@ -25,6 +25,10 @@ const registerLimit = rateLimit({ scope: "register", max: num("REGISTER_MAX_PER_
 const verifyLimit = rateLimit({ scope: "verify-email", max: num("VERIFY_MAX_PER_HOUR", 30), message: "Too many attempts. Please try again later." });
 const resendLimit = rateLimit({ scope: "resend-verification", max: num("RESEND_MAX_PER_HOUR", 5), keyOf: (req) => `${req.ip}|${emailOf(req)}`, message: "Too many requests. Please try again in an hour." });
 
-const resetAllRateLimits = () => Promise.all(["register", "verify-email", "resend-verification"].map((s) => store.clearAll(s)));
+// Phone codes: per signed-in user (these routes run after authenticate).
+const phoneSendLimit = rateLimit({ scope: "phone-send", max: num("PHONE_SEND_MAX_PER_HOUR", 5), keyOf: (req) => `u${req.user.id}`, message: "Too many codes requested. Please try again in an hour." });
+const phoneVerifyLimit = rateLimit({ scope: "phone-verify", max: num("PHONE_VERIFY_MAX_PER_HOUR", 30), keyOf: (req) => `u${req.user.id}`, message: "Too many attempts. Please try again later." });
 
-module.exports = { rateLimit, registerLimit, verifyLimit, resendLimit, resetAllRateLimits };
+const resetAllRateLimits = () => Promise.all(["register", "verify-email", "resend-verification", "phone-send", "phone-verify"].map((s) => store.clearAll(s)));
+
+module.exports = { rateLimit, registerLimit, verifyLimit, resendLimit, phoneSendLimit, phoneVerifyLimit, resetAllRateLimits };
