@@ -65,6 +65,20 @@ function Users({ setFlash }) {
     catch (e) { setError(e.message); }
   }
 
+  // Permanent. The admin must type the person's email, and is told what disappears with them.
+  async function remove(u) {
+    const what = u.role === "PATIENT" ? "ALL their prescriptions, reminders, appointments and uploaded files"
+      : u.role === "DOCTOR" ? "ALL prescriptions they wrote (also from their patients' history), their templates and appointments"
+      : "the dispensing records they entered";
+    const typed = window.prompt(`PERMANENTLY DELETE ${u.name} (${ROLE_TEXT[u.role]})?\n\nThis also deletes ${what}. It cannot be undone. If you only want to block sign-in, use Deactivate instead.\n\nType their email address to confirm:\n${u.email}`);
+    if (typed === null) return;
+    try {
+      const r = await call(`/admin/users/${u.user_id}`, { method: "DELETE", body: { confirm_email: typed.trim() } });
+      setFlash({ success: `${u.name} was deleted permanently${r.data.prescriptions_removed ? ` together with ${r.data.prescriptions_removed} prescription(s)` : ""}.` });
+      setError(""); load(page);
+    } catch (e) { setError(e.message); }
+  }
+
   async function resetPw(u) {
     const pw = window.prompt(`Type a new temporary password for ${u.name}.\nAt least 8 characters with a letter and a number. They will be signed out everywhere.`);
     if (!pw) return;
@@ -95,7 +109,7 @@ function Users({ setFlash }) {
           <>
             <strong>{u.name} <span className="badge">{ROLE_TEXT[u.role]}</span> {!u.is_active && <span className="badge EXPIRED">Deactivated</span>}</strong>
             <span>{u.email}{u.specialization ? ` · ${u.specialization} (${u.license_number})` : ""}{u.pharmacy_name ? ` · ${u.pharmacy_name}` : ""}</span>
-            {u.user_id !== user.user_id && <div className="actions"><button className="secondary" onClick={() => resetPw(u)}>Reset password</button><button className="secondary" onClick={() => toggle(u)}>{u.is_active ? "Deactivate" : "Re-activate"}</button></div>}
+            {u.user_id !== user.user_id && <div className="actions"><button className="secondary" onClick={() => resetPw(u)}>Reset password</button><button className="secondary" onClick={() => toggle(u)}>{u.is_active ? "Deactivate" : "Re-activate"}</button>{u.role !== "ADMIN" && <button style={{ background: "#e5484d", color: "#fff" }} onClick={() => remove(u)}>Delete</button>}</div>}
           </>
         )} />
         {more && <button className="secondary" onClick={loadMore}>Load more</button>}

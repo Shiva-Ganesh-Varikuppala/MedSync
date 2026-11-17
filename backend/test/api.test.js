@@ -1425,3 +1425,70 @@ test("email verification: when email cannot be sent the account is still created
         await require("../src/middleware/rateLimit").resetAllRateLimits();
     }
 });
+
+test("admin delete: needs the typed email; removes a doctor, a patient and pharmacy staff with their records; keeps the audit trail", async () => {
+    await require("../src/middleware/rateLimit").resetAllRateLimits();
+    await throttle.resetAllThrottles();
+    const del = (id, body, as = "admin") => call("DELETE", `/api/admin/users/${id}`, { as, body });
+    const count = async (sql, p = []) => (await pool.query(sql, p))[0][0].n;
+    const idOf = async (email) => ((await pool.query("SELECT user_id FROM users WHERE email = ?", [email]))[0][0] || {}).user_id;
+
+    // A doctor, a patient (verified), and a staff member, all new
+    const made = await call("POST", "/api/admin/users", { as: "admin", body: { role: "DOCTOR", name: "Dr Remove", email: "dr.remove@medsync.dev", password: "Strong@123", license_number: "LIC-DEL-1", specialization: "General" } });
+    assert.equal(made.status, 201);
+    assert.equal((await call("POST", "/api/admin/users", { as: "admin", body: { role: "PHARMACY_STAFF", name: "Staff Remove", email: "staff.remove@medsync.dev", password: "Strong@123", pharmacy_id: 1 } })).status, 201);
+    assert.equal((await mailReg("pat.remove@medsync.dev")).status, 201);
+    await pool.query("UPDATE users SET email_verified_at = NOW() WHERE email = 'pat.remove@medsync.dev'");
+    const docLogin = await call("POST", "/api/auth/login", { body: { email: "dr.remove@medsync.dev", password: "Strong@123" } });
+    tokens.deldoc = docLogin.json.data.token;
+    const [[{ patient_id: patientId }]] = await pool.query("SELECT patient_id FROM patients p JOIN users u ON u.user_id = p.user_id WHERE u.email = 'pat.remove@medsync.dev'");
+    const [[{ doctor_id: doctorId }]] = await pool.query("SELECT doctor_id FROM doctors d JOIN users u ON u.user_id = d.user_id WHERE u.email = 'dr.remove@medsync.dev'");
+    const rx = await call("POST", "/api/prescriptions", { as: "deldoc", body: rxBody(patientId) });
+    assert.equal(rx.status, 201);
+    const rxId2 = rx.json.data.prescription_id;
+    await pool.query("INSERT INTO appointments (patient_id, doctor_id, scheduled_at, reason) VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 3 DAY), 'Check')", [patientId, doctorId]);
+    await pool.query("INSERT INTO prescription_templates (doctor_id, name) VALUES (?, 'mine')", [doctorId]);
+
+    // guards
+    const docId = await idOf("dr.remove@medsync.dev");
+    assert.equal((await del(docId, { confirm_email: "dr.remove@medsync.dev" }, "doc")).status, 403, "only admins");
+    assert.equal((await del(docId, {})).status, 400, "no confirmation");
+    assert.equal((await del(docId, { confirm_email: "someone@else.dev" })).status, 400, "wrong confirmation");
+    assert.equal((await del(999999, { confirm_email: "x@y.dev" })).status, 404);
+    const adminId = await idOf("admin@medsync.dev");
+    assert.equal((await del(adminId, { confirm_email: "admin@medsync.dev" })).status, 403, "not your own account");
+    assert.equal(await count("SELECT COUNT(*) AS n FROM users WHERE email = 'dr.remove@medsync.dev'"), 1, "nothing was deleted by the refused calls");
+
+    // doctor: their prescription (and its reminders) go; the patient stays
+    const gone = await del(docId, { confirm_email: " DR.Remove@medsync.dev " });
+    assert.equal(gone.status, 200);
+    assert.equal(gone.json.data.prescriptions_removed, 1);
+    assert.equal(await count("SELECT COUNT(*) AS n FROM prescriptions WHERE prescription_id = ?", [rxId2]), 0);
+    assert.equal(await count("SELECT COUNT(*) AS n FROM prescription_items WHERE prescription_id = ?", [rxId2]), 0);
+    assert.equal(await count("SELECT COUNT(*) AS n FROM doctors WHERE doctor_id = ?", [doctorId]), 0);
+    assert.equal(await count("SELECT COUNT(*) AS n FROM prescription_templates WHERE doctor_id = ?", [doctorId]), 0);
+    assert.equal(await count("SELECT COUNT(*) AS n FROM patients WHERE patient_id = ?", [patientId]), 1, "their patient is untouched");
+    assert.equal((await call("GET", "/api/doctors/me", { as: "deldoc" })).status, 401, "their session ends");
+    assert.equal((await call("POST", "/api/auth/login", { body: { email: "dr.remove@medsync.dev", password: "Strong@123" } })).status, 401);
+
+    // patient: gone with appointments; other patients keep their data
+    const before = await count("SELECT COUNT(*) AS n FROM prescriptions");
+    const patId = await idOf("pat.remove@medsync.dev");
+    assert.equal((await del(patId, { confirm_email: "pat.remove@medsync.dev" })).status, 200);
+    assert.equal(await count("SELECT COUNT(*) AS n FROM appointments WHERE patient_id = ?", [patientId]), 0);
+    assert.equal(await count("SELECT COUNT(*) AS n FROM email_verifications WHERE user_id = ?", [patId]), 0);
+    assert.equal(await count("SELECT COUNT(*) AS n FROM prescriptions"), before, "other prescriptions are untouched");
+    assert.equal(await count("SELECT COUNT(*) AS n FROM users WHERE email = 'arjun.kumar@medsync.dev'"), 1);
+
+    // pharmacy staff
+    const stId = await idOf("staff.remove@medsync.dev");
+    assert.equal((await del(stId, { confirm_email: "staff.remove@medsync.dev" })).status, 200);
+    assert.equal(await count("SELECT COUNT(*) AS n FROM users WHERE email = 'staff.remove@medsync.dev'"), 0);
+    assert.equal(await count("SELECT COUNT(*) AS n FROM pharmacy_staff WHERE user_id = ?", [stId]), 0);
+
+    // the audit trail records who deleted whom
+    const [logs] = await pool.query("SELECT user_id, entity_id, details FROM audit_logs WHERE action = 'USER_DELETE' ORDER BY audit_id");
+    assert.equal(logs.length, 3);
+    assert.ok(logs.every((l) => l.user_id === adminId));
+    assert.ok(logs.some((l) => /dr\.remove@medsync\.dev/.test(l.details)));
+});

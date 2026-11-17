@@ -5,6 +5,7 @@ const { writeAudit } = require("../utils/audit");
 const { toEnum, toInt, toText, pagination, likeEscape } = require("../utils/validate");
 const { withTransaction } = require("../utils/transaction");
 const { checkEmail, checkPassword } = require("./authService");
+const blobStore = require("./blobStore");
 
 const CREATABLE = ["DOCTOR", "PHARMACY_STAFF"];
 const ROLES = ["DOCTOR", "PATIENT", "PHARMACY_STAFF", "ADMIN"];
@@ -71,6 +72,62 @@ async function setActive(admin, id, value, ip) {
     return { user_id: userId, is_active: value };
 }
 
+// Permanently deletes a patient, doctor or pharmacy-staff account and everything that belongs to it.
+//   patient:        their prescriptions (with items, reminders, attached files and dispensing rows) and appointments
+//   doctor:         the prescriptions they wrote (these disappear from the patients' history too), templates, appointments
+//   pharmacy staff: the dispensing rows they recorded (stock already taken from batches stays taken)
+// Sign-in sessions, notifications and verification links go with the account. The audit log is kept
+// (it only loses the link to the deleted user) and gets a USER_DELETE row. Cannot be undone.
+async function deleteUser(admin, id, confirmEmail, ip) {
+    const userId = toInt(id, "userId");
+    if (userId === admin.id) throw forbidden("You cannot delete your own account");
+    const [rows] = await pool.execute("SELECT user_id, name, email, role FROM users WHERE user_id = ?", [userId]);
+    if (!rows.length) throw notFound("User not found");
+    const target = rows[0];
+    if (target.role === "ADMIN") throw forbidden("Administrator accounts cannot be deleted here");
+    // Typing the address is the safety catch: a stray click or a copied request cannot delete anybody.
+    if (typeof confirmEmail !== "string" || confirmEmail.trim().toLowerCase() !== String(target.email).toLowerCase()) {
+        throw badRequest("confirm_email must be the user's email address");
+    }
+
+    const blobs = [];
+    const result = await withTransaction(async (conn) => {
+        let removed = 0;
+        const byColumn = target.role === "PATIENT" ? "patient_id" : target.role === "DOCTOR" ? "doctor_id" : null;
+        let ownerId = null;
+        if (byColumn) {
+            const table = target.role === "PATIENT" ? "patients" : "doctors";
+            const [[own]] = await conn.execute(`SELECT ${byColumn} AS id FROM ${table} WHERE user_id = ?`, [userId]);
+            ownerId = own ? own.id : null;
+        }
+        if (ownerId !== null) {
+            const rx = `JOIN prescriptions p ON p.prescription_id = {T}.prescription_id WHERE p.${byColumn} = ?`;
+            const [files] = await conn.execute(`SELECT a.blob_name FROM prescription_attachments a ${rx.replace("{T}", "a")}`, [ownerId]);
+            files.forEach((f) => blobs.push(f.blob_name));
+            await conn.execute(`DELETE r FROM reminders r JOIN prescription_items pi ON pi.prescription_item_id = r.prescription_item_id JOIN prescriptions p ON p.prescription_id = pi.prescription_id WHERE p.${byColumn} = ?`, [ownerId]);
+            await conn.execute(`DELETE d FROM dispensed_items d ${rx.replace("{T}", "d")}`, [ownerId]);
+            await conn.execute(`DELETE a FROM prescription_attachments a ${rx.replace("{T}", "a")}`, [ownerId]);
+            await conn.execute(`DELETE pi FROM prescription_items pi ${rx.replace("{T}", "pi")}`, [ownerId]);
+            const [gone] = await conn.execute(`DELETE FROM prescriptions WHERE ${byColumn} = ?`, [ownerId]);
+            removed = gone.affectedRows;
+            // Appointments and (for doctors) templates are removed by the database (ON DELETE CASCADE).
+            await conn.execute(target.role === "PATIENT" ? "DELETE FROM patients WHERE patient_id = ?" : "DELETE FROM doctors WHERE doctor_id = ?", [ownerId]);
+        }
+        // Rows this person created on other people's records (files they uploaded, medicines they dispensed).
+        const [mine] = await conn.execute("SELECT blob_name FROM prescription_attachments WHERE uploaded_by = ?", [userId]);
+        mine.forEach((f) => blobs.push(f.blob_name));
+        await conn.execute("DELETE FROM prescription_attachments WHERE uploaded_by = ?", [userId]);
+        await conn.execute("DELETE FROM dispensed_items WHERE dispensed_by = ?", [userId]);
+        await conn.execute("DELETE FROM pharmacy_staff WHERE user_id = ?", [userId]);
+        await conn.execute("DELETE FROM users WHERE user_id = ?", [userId]);
+        await writeAudit({ userId: admin.id, action: "USER_DELETE", entityType: "user", entityId: userId, details: { role: target.role, name: target.name, email: target.email, prescriptions_removed: removed }, ip }, conn);
+        return { user_id: userId, role: target.role, prescriptions_removed: removed };
+    });
+    // After the commit: a file that cannot be removed must not undo the deletion.
+    for (const name of blobs) await blobStore.remove(name).catch(() => {});
+    return result;
+}
+
 async function resetPassword(admin, id, newPassword, ip) {
     const userId = toInt(id, "userId");
     if (userId === admin.id) throw forbidden("Use My profile to change your own password");
@@ -98,4 +155,4 @@ async function summary() {
     return { doctors: Number(counts.doctors), patients: Number(counts.patients), pharmacy_staff: Number(counts.pharmacy_staff), deactivated: Number(counts.deactivated), pharmacies: p.pharmacies };
 }
 
-module.exports = { createPharmacy, createUser, listUsers, resetPassword, setActive, summary };
+module.exports = { createPharmacy, createUser, deleteUser, listUsers, resetPassword, setActive, summary };

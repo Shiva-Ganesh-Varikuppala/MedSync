@@ -17,6 +17,7 @@ router.get("/users", asyncHandler(c.listUsers));
 router.post("/users", asyncHandler(c.createUser));
 router.patch("/users/:userId/active", asyncHandler(c.setActive));
 router.post("/users/:userId/password", asyncHandler(c.resetPassword));
+router.delete("/users/:userId", asyncHandler(c.deleteUser));
 router.post("/pharmacies", asyncHandler(c.createPharmacy));
 router.post("/cron/run", asyncHandler(async (req, res) => {
     res.json({

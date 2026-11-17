@@ -5,6 +5,7 @@ module.exports = {
     listUsers: async (req, res) => ok(res, "Users retrieved successfully", await service.listUsers(req.query)),
     createUser: async (req, res) => ok(res, "User created successfully", await service.createUser(req.user, req.body || {}, req.ip), 201),
     setActive: async (req, res) => ok(res, "User updated successfully", await service.setActive(req.user, req.params.userId, (req.body || {}).is_active, req.ip)),
+    deleteUser: async (req, res) => ok(res, "User deleted permanently", await service.deleteUser(req.user, req.params.userId, (req.body || {}).confirm_email, req.ip)),
     resetPassword: async (req, res) => ok(res, "Password reset successfully", await service.resetPassword(req.user, req.params.userId, (req.body || {}).new_password, req.ip)),
     createPharmacy: async (req, res) => ok(res, "Pharmacy created successfully", await service.createPharmacy(req.user, req.body || {}, req.ip), 201)
 };
