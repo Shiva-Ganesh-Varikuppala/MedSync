@@ -1,0 +1,23 @@
+cd ~/Documents/WEBSITES/MedSync-deploy
+
+cat > render.yaml <<'EOF'
+services:
+  - type: web
+    name: medsync-backend
+    runtime: node
+    branch: deploy/demo-no-db
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    plan: free
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DEMO_MODE
+        value: "true"
+      - key: JWT_SECRET
+        generateValue: true
+      - key: CORS_ORIGIN
+        sync: false
+EOF

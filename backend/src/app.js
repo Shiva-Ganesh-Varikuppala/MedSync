@@ -1,9 +1,12 @@
 const express = require("express");
 const cookieParser = require("cookie-parser");
 const healthRoutes = require("./routes/healthRoutes");
-const apiRoutes = require("./routes");
+// apiRoutes is lazy-loaded below so that importing this module in DEMO_MODE
+// never pulls in config/database.js (which creates a MySQL pool on require).
 const { notFoundHandler, errorHandler } = require("./middleware/errorHandler");
 const { auditMutations } = require("./middleware/auditMutations");
+
+const DEMO_MODE = process.env.DEMO_MODE === "true";
 
 const app = express();
 
@@ -52,7 +55,22 @@ app.use(cookieParser());
 app.use(auditMutations);
 
 app.use("/api/health", healthRoutes);
-app.use("/api", apiRoutes);
+
+if (DEMO_MODE) {
+    // In demo mode, database-dependent routes are disabled.
+    // apiRoutes is NOT required at all, so config/database.js is never loaded.
+    app.use("/api", (req, res) => {
+        res.status(503).json({
+            success: false,
+            message: "This feature is temporarily unavailable in the public demo.",
+            code: "DATABASE_FEATURES_DISABLED"
+        });
+    });
+} else {
+    // Normal mode: load all database-backed routes.
+    const apiRoutes = require("./routes");
+    app.use("/api", apiRoutes);
+}
 
 app.use(notFoundHandler);
 app.use(errorHandler);
