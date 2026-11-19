@@ -7,6 +7,7 @@ import { AreaChart } from "../components/Charts";
 import Appointments from "../components/Appointments";
 import TemplateBar from "../components/TemplateBar";
 import DoctorCalendar from "../components/DoctorCalendar";
+import { confirmDialog } from "../components/Dialog";
 
 const FREQUENCIES = [[1, "Once daily"], [2, "Twice daily"], [3, "Three times daily"], [4, "Four times daily"]];
 // Count of prescriptions per month for the last six months, oldest first.
@@ -138,7 +139,7 @@ function NewPrescription({ patient, goPatients, done }) {
     e.preventDefault();
     if (!items.length) { setError("Add at least one medicine."); return; }
     if (hasSevere && reason.trim().length < 10) { setError("A severe interaction needs a written reason (at least 10 characters) before you can prescribe."); return; }
-    if (warnings.length && !hasSevere && !window.confirm(`${warnings.length} interaction warning(s) found. Create the prescription anyway?`)) return;
+    if (warnings.length && !hasSevere && !(await confirmDialog({ title: "Interaction warnings found", message: `${warnings.length} interaction warning(s) were found for these medicines. Create the prescription anyway?`, confirmLabel: "Create anyway" }))) return;
     setBusy(true);
     try {
       const { data } = await call("/prescriptions", { method: "POST", body: {
@@ -202,7 +203,7 @@ function Mine({ setFlash }) {
   useEffect(() => { load(); }, [load]);
 
   async function cancel(rx) {
-    if (!window.confirm(`Cancel prescription #${rx.prescription_id}? Pending reminders will stop.`)) return;
+    if (!(await confirmDialog({ title: `Cancel prescription #${rx.prescription_id}?`, message: "Pending reminders will stop and the pharmacy can no longer dispense it.", confirmLabel: "Cancel prescription", cancelLabel: "Keep it", danger: true }))) return;
     try { await call(`/prescriptions/${rx.prescription_id}/cancel`, { method: "POST" }); setFlash({ success: `Prescription #${rx.prescription_id} cancelled.` }); setOpen(null); load(); }
     catch (e) { setError(e.message); }
   }

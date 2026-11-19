@@ -5,6 +5,7 @@ import Dispense from "./pharmacy/Dispense";
 import MedicinePicker from "../components/MedicinePicker";
 import { BarChart } from "../components/Charts";
 import StockCalendar from "../components/StockCalendar";
+import { confirmDialog } from "../components/Dialog";
 
 const today = () => new Date().toISOString().slice(0, 10);
 const STATUS_TEXT = { VALID: "In date", EXPIRING_SOON: "Expiring soon", EXPIRED: "Expired" };
@@ -64,7 +65,7 @@ function Inventory({ pid, setFlash }) {
     } catch (e) { setError(e.message); }
   }
   async function remove(b) {
-    if (!window.confirm(`Remove batch ${b.batch_number} of ${b.name} from the inventory? Its dispensing history is kept.`)) return;
+    if (!(await confirmDialog({ title: `Remove batch ${b.batch_number}?`, message: `${b.name} will be removed from the inventory. Its dispensing history is kept.`, confirmLabel: "Remove batch", danger: true }))) return;
     try { await call(`/batches/${b.batch_id}`, { method: "DELETE" }); setRows((cur) => cur.filter((x) => x.batch_id !== b.batch_id)); setFlash({ success: "Batch removed." }); refreshSummary(); }
     catch (e) { setError(e.message); }
   }

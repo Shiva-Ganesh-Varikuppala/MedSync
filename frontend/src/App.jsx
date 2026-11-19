@@ -12,6 +12,7 @@ import LoadingBar from "./components/LoadingBar";
 import ThemeToggle from "./components/ThemeToggle";
 import { NotificationBell } from "./components/Notifications";
 import SearchBox from "./components/SearchBox";
+import DialogHost from "./components/Dialog";
 
 const TITLES = { DOCTOR: "Doctor workspace", PATIENT: "Patient care", PHARMACY_STAFF: "Pharmacy inventory", ADMIN: "Administration" };
 const ROLE_TEXT = { DOCTOR: "Doctor", PATIENT: "Patient", PHARMACY_STAFF: "Pharmacy staff", ADMIN: "Administrator" };
@@ -44,6 +45,7 @@ export default function App() {
   return (
     <>
       <LoadingBar />
+      <DialogHost />
       <div className="app">
         <aside className="sidebar">
           <div className="brand"><Brand size={32} /><span>MedSync</span></div>

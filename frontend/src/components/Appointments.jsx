@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useAuth } from "../auth";
 import { List, Notice, Panel, Tiles } from "./ui";
+import { confirmDialog, promptDialog } from "./Dialog";
 
 const SLOTS = Array.from({ length: 24 }, (_, i) => `${String(8 + Math.floor(i / 2)).padStart(2, "0")}:${i % 2 ? "30" : "00"}`);
 const todayStr = () => new Date().toLocaleDateString("en-CA");
@@ -59,9 +60,14 @@ export default function Appointments({ role }) {
       setOk("Request sent. You will be notified when the doctor answers."); setForm({ ...form, reason: "" }); setWhen("upcoming"); load();
     } catch (err) { setError(err.message); }
   }
-  function decline(a) {
-    const note = window.prompt(`Why are you declining ${a.patient_name}'s request? (the patient will see this)`);
-    if (note && note.trim().length >= 3) act(a, "decline", { note: note.trim() }, "Request declined.");
+  async function decline(a) {
+    const note = await promptDialog({
+      title: `Decline ${a.patient_name}'s request?`, message: "The patient will see your reason.", label: "Reason", multiline: true, minLength: 3, confirmLabel: "Decline request", danger: true,
+    });
+    if (note) act(a, "decline", { note }, "Request declined.");
+  }
+  async function cancel(a) {
+    if (await confirmDialog({ title: "Cancel this appointment?", message: "The doctor will be told it was cancelled.", confirmLabel: "Cancel appointment", cancelLabel: "Keep it", danger: true })) act(a, "cancel", {}, "Appointment cancelled.");
   }
 
   const waiting = rows.filter((r) => r.status === "REQUESTED").length;
@@ -103,7 +109,7 @@ export default function Appointments({ role }) {
             )}
             <div className="actions">
               {role === "PATIENT" && ["REQUESTED", "CONFIRMED"].includes(a.status) && !a.is_past && (
-                <button className="secondary" onClick={() => window.confirm("Cancel this appointment?") && act(a, "cancel", {}, "Appointment cancelled.")}>Cancel</button>
+                <button className="secondary" onClick={() => cancel(a)}>Cancel</button>
               )}
               {role === "DOCTOR" && a.status === "REQUESTED" && !a.is_past && <button onClick={() => act(a, "confirm", {}, "Appointment confirmed.")}>Confirm</button>}
               {role === "DOCTOR" && a.status === "REQUESTED" && !a.is_past && <button className="secondary" onClick={() => decline(a)}>Decline</button>}

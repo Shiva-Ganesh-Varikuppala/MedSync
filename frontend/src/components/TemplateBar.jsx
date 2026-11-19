@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useAuth } from "../auth";
 import { Notice } from "./ui";
+import { confirmDialog } from "./Dialog";
 
 const today = () => new Date().toISOString().slice(0, 10);
 // UTC arithmetic on a plain date: building it at local midnight and converting back shifted the date by a day east of UTC (e.g. India).
@@ -21,9 +22,9 @@ export default function TemplateBar({ items, diagnosis, notes, onApply }) {
 
   const picked = templates.find((t) => String(t.template_id) === chosen);
 
-  function apply() {
+  async function apply() {
     if (!picked) return;
-    if (items.length && !window.confirm("Using a template replaces the medicines already on this form. Continue?")) return;
+    if (items.length && !(await confirmDialog({ title: "Replace the medicines on this form?", message: "Using a template replaces the medicines already on this form.", confirmLabel: "Use template" }))) return;
     const usable = picked.items.filter((i) => i.is_active);
     const skipped = picked.items.length - usable.length;
     onApply({
@@ -51,7 +52,7 @@ export default function TemplateBar({ items, diagnosis, notes, onApply }) {
   }
 
   async function remove() {
-    if (!picked || !window.confirm(`Delete the template "${picked.name}"?`)) return;
+    if (!picked || !(await confirmDialog({ title: `Delete the template "${picked.name}"?`, message: "Prescriptions already written from it are not affected.", confirmLabel: "Delete template", danger: true }))) return;
     try { await call(`/templates/${picked.template_id}`, { method: "DELETE" }); setChosen(""); setMsg({ success: "Template deleted." }); load(); }
     catch (err) { setMsg({ error: err.message }); }
   }

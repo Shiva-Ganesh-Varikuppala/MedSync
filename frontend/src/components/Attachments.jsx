@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "../auth";
+import { confirmDialog } from "./Dialog";
 
 const MAX_MB = 5;
 const kb = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
@@ -40,7 +41,7 @@ export default function Attachments({ prescriptionId, canEdit }) {
   }
 
   async function remove(f) {
-    if (!window.confirm(`Delete ${f.file_name}?`)) return;
+    if (!(await confirmDialog({ title: `Delete ${f.file_name}?`, message: "The file is removed from this prescription for everyone.", confirmLabel: "Delete file", danger: true }))) return;
     setError("");
     try { await call(`/attachments/${f.attachment_id}`, { method: "DELETE" }); await load(); } catch (err) { setError(err.message); }
   }

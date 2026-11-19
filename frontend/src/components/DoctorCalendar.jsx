@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useAuth } from "../auth";
 import CalendarShell from "./CalendarShell";
+import { promptDialog } from "./Dialog";
 
 // The doctor's schedule: appointments (act on them right here) and the days prescribed courses end, which are natural follow-up points.
 const timeOf = (s) => s.slice(11, 16);
@@ -19,13 +20,13 @@ export default function DoctorCalendar() {
     try { await call(`/appointments/${a.appointment_id}/${action}`, { method: "POST", body }); await ctx.reload(); }
     catch (e) { ctx.setError(e.message); } finally { setBusy(0); }
   }
-  function decline(a, ctx) {
-    const note = window.prompt("Reason for declining (the patient will see this):");
-    if (note && note.trim().length >= 3) act(a, "decline", { note: note.trim() }, ctx);
+  async function decline(a, ctx) {
+    const note = await promptDialog({ title: `Decline ${a.patient_name}'s request?`, message: "The patient will see your reason.", label: "Reason", multiline: true, minLength: 3, confirmLabel: "Decline request", danger: true });
+    if (note) act(a, "decline", { note }, ctx);
   }
-  function reschedule(a, ctx) {
-    const at = window.prompt("New date and time (YYYY-MM-DD HH:MM):", a.scheduled_at);
-    if (at && at.trim()) act(a, "reschedule", { scheduled_at: at.trim() }, ctx);
+  async function reschedule(a, ctx) {
+    const at = await promptDialog({ title: `Reschedule ${a.patient_name}'s appointment`, message: "Pick the new date and time. The patient is notified.", label: "New date and time", type: "datetime-local", initial: a.scheduled_at.replace(" ", "T"), confirmLabel: "Reschedule" });
+    if (at) act(a, "reschedule", { scheduled_at: at.replace("T", " ").slice(0, 16) }, ctx);
   }
 
   return (

@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "../../auth";
 import { List, Notice, Panel } from "../../components/ui";
+import { confirmDialog } from "../../components/Dialog";
 
 const FREQUENCY = (n) => ({ 1: "once daily", 2: "twice daily", 3: "three times daily", 4: "four times daily" }[n] || `${n}× daily`);
 
@@ -50,7 +51,7 @@ function Review({ pid, id, onDone }) {
 
   async function dispense() {
     const name = data.prescription.patient_name;
-    if (!window.confirm(`Dispense prescription #${id} for ${name}? Stock will be reduced and this cannot be undone.`)) return;
+    if (!(await confirmDialog({ title: `Dispense prescription #${id}?`, message: `For ${name}. Stock will be reduced and this cannot be undone.`, confirmLabel: "Dispense" }))) return;
     setBusy(true);
     try { await call(`/pharmacies/${pid}/prescriptions/${id}/dispense`, { method: "POST", body: { acknowledge_interactions: reviewed } }); onDone(`Prescription #${id} for ${name} was dispensed and stock was updated.`); }
     catch (e) { setError(e.message); } finally { setBusy(false); }

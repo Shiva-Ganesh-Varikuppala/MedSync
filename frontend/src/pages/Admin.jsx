@@ -4,6 +4,7 @@ import { List, Notice, Panel, Tiles, useGoto } from "../components/ui";
 import { AreaChart, BarChart, Donut } from "../components/Charts";
 import { downloadFile } from "../components/download";
 import AshBurstButton from "../components/AshBurstButton";
+import { confirmDialog, promptDialog } from "../components/Dialog";
 
 const TABS = [["users", "Users"], ["create", "Create account"], ["pharmacy", "New pharmacy"], ["analytics", "Analytics"], ["reports", "Reports"], ["automation", "Automation"]];
 const ROLE_TEXT = { DOCTOR: "Doctor", PATIENT: "Patient", PHARMACY_STAFF: "Pharmacy staff", ADMIN: "Admin" };
@@ -61,7 +62,12 @@ function Users({ setFlash }) {
 
   async function toggle(u) {
     const next = !u.is_active;
-    if (!window.confirm(`${next ? "Re-activate" : "Deactivate"} ${u.name}? ${next ? "" : "They will be signed out immediately."}`)) return;
+    const ok = await confirmDialog({
+      title: `${next ? "Re-activate" : "Deactivate"} ${u.name}?`,
+      message: next ? "They will be able to sign in again." : "They will be signed out immediately and cannot sign in until you re-activate the account. Nothing is deleted.",
+      confirmLabel: next ? "Re-activate" : "Deactivate", danger: !next,
+    });
+    if (!ok) return;
     try { await call(`/admin/users/${u.user_id}/active`, { method: "PATCH", body: { is_active: next } }); setFlash({ success: `${u.name} ${next ? "re-activated" : "deactivated"}.` }); load(page); }
     catch (e) { setError(e.message); }
   }
@@ -71,7 +77,11 @@ function Users({ setFlash }) {
     const what = u.role === "PATIENT" ? "ALL their prescriptions, reminders, appointments and uploaded files"
       : u.role === "DOCTOR" ? "ALL prescriptions they wrote (also from their patients' history), their templates and appointments"
       : "the dispensing records they entered";
-    const typed = window.prompt(`PERMANENTLY DELETE ${u.name} (${ROLE_TEXT[u.role]})?\n\nThis also deletes ${what}. It cannot be undone. If you only want to block sign-in, use Deactivate instead.\n\nType their email address to confirm:\n${u.email}`);
+    const typed = await promptDialog({
+      title: `Permanently delete ${u.name}?`,
+      message: [`${ROLE_TEXT[u.role]} account. This also deletes ${what}.`, "It cannot be undone. If you only want to block sign-in, use Deactivate instead."],
+      label: "Their email address", match: u.email, confirmLabel: "Delete permanently", danger: true,
+    });
     if (typed === null) return false;
     try {
       const r = await call(`/admin/users/${u.user_id}`, { method: "DELETE", body: { confirm_email: typed.trim() } });
@@ -82,7 +92,12 @@ function Users({ setFlash }) {
   }
 
   async function resetPw(u) {
-    const pw = window.prompt(`Type a new temporary password for ${u.name}.\nAt least 8 characters with a letter and a number. They will be signed out everywhere.`);
+    const pw = await promptDialog({
+      title: `Reset password for ${u.name}`,
+      message: "Type a new temporary password. They will be signed out everywhere and should change it after signing in.",
+      label: "New temporary password", type: "password", confirmLabel: "Reset password",
+      validate: (p) => (p.length >= 8 && /[A-Za-z]/.test(p) && /\d/.test(p) ? "" : "At least 8 characters with a letter and a number."),
+    });
     if (!pw) return;
     try { await call(`/admin/users/${u.user_id}/password`, { method: "POST", body: { new_password: pw } }); setFlash({ success: `Password reset for ${u.name}. Give them the new password and ask them to change it.` }); setError(""); }
     catch (e) { setError(e.message); }
