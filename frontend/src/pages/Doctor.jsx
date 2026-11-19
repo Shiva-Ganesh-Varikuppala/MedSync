@@ -9,6 +9,7 @@ import TemplateBar from "../components/TemplateBar";
 import DoctorCalendar from "../components/DoctorCalendar";
 import { confirmDialog } from "../components/Dialog";
 import { DoctorOverview } from "../components/Overview";
+import { pickTab } from "../router";
 
 const FREQUENCIES = [[1, "Once daily"], [2, "Twice daily"], [3, "Three times daily"], [4, "Four times daily"]];
 // Count of prescriptions per month for the last six months, oldest first.
@@ -22,8 +23,11 @@ const today = () => new Date().toISOString().slice(0, 10);
 const addDays = (d, n) => { const x = new Date(`${d}T00:00:00Z`); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
 const newItem = (m) => ({ key: Math.random(), medicine_id: m.medicine_id, label: `${m.name} ${m.strength || ""}`.trim(), dosage: "", frequency_per_day: 1, start_date: today(), end_date: addDays(today(), 6) });
 
-export default function Doctor() {
-  const [tab, setTab] = useState("overview");
+const TAB_KEYS = ["overview", "patients", "new", "mine", "appts", "schedule"];
+
+// The open tab comes from the address bar (see router.js).
+export default function Doctor({ tab: shownTab, setTab }) {
+  const tab = pickTab(shownTab, TAB_KEYS, "overview");
   const [patient, setPatient] = useState(null); // chosen patient, shared by the tabs
   const [flash, setFlash] = useState({});
   useGoto(setTab);

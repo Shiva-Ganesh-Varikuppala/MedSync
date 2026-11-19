@@ -7,14 +7,16 @@ import { BarChart } from "../components/Charts";
 import StockCalendar from "../components/StockCalendar";
 import { confirmDialog } from "../components/Dialog";
 import { PharmacyOverview } from "../components/Overview";
+import { pickTab } from "../router";
 
 const today = () => new Date().toISOString().slice(0, 10);
 const STATUS_TEXT = { VALID: "In date", EXPIRING_SOON: "Expiring soon", EXPIRED: "Expired" };
 const TABS = [["overview", "Overview"], ["inventory", "Inventory"], ["dispense", "Dispense"], ["history", "Dispensing history"], ["receive", "Receive stock"], ["alerts", "Alerts"], ["calendar", "Expiry calendar"], ["catalog", "Medicine catalog"]];
 
-export default function Pharmacy() {
+// The open tab comes from the address bar (see router.js).
+export default function Pharmacy({ tab: shownTab, setTab }) {
   const { user } = useAuth();
-  const [tab, setTab] = useState("overview");
+  const tab = pickTab(shownTab, TABS.map(([k]) => k), "overview");
   useGoto(setTab);
   const [flash, setFlash] = useState({});
   if (!user.pharmacy_id) return <p className="error">Your account is not linked to a pharmacy. Ask an administrator.</p>;

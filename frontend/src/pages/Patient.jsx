@@ -7,15 +7,17 @@ import { NotificationList } from "../components/Notifications";
 import Appointments from "../components/Appointments";
 import CareCalendar from "../components/CareCalendar";
 import { PatientOverview } from "../components/Overview";
+import { pickTab } from "../router";
 
 const hhmm = (s) => s.slice(11, 16);
 const day = (s) => s.slice(0, 10);
 const prettyDay = (d) => new Date(`${d}T00:00:00`).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
 
-export default function Patient({ tab: shownTab, setTab: setShownTab }) {
-  const [ownTab, setOwnTab] = useState("overview");
-  const tab = shownTab || ownTab;          // the top-bar bell can switch tabs from outside
-  const setTab = setShownTab || setOwnTab;
+const TAB_KEYS = ["overview", "today", "calendar", "rx", "appts", "notifications"];
+
+// The open tab comes from the address bar (see router.js), so links, Back and reload work.
+export default function Patient({ tab: shownTab, setTab }) {
+  const tab = pickTab(shownTab, TAB_KEYS, "overview");
   return (
     <>
       <nav className="tabs" role="tablist">

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React from "react";
 import { useAuth } from "./auth";
 import Login from "./pages/Login";
 import VerifyEmail from "./pages/VerifyEmail";
@@ -13,6 +13,7 @@ import ThemeToggle from "./components/ThemeToggle";
 import { NotificationBell } from "./components/Notifications";
 import SearchBox from "./components/SearchBox";
 import DialogHost from "./components/Dialog";
+import { usePath } from "./router";
 
 const TITLES = { DOCTOR: "Doctor workspace", PATIENT: "Patient care", PHARMACY_STAFF: "Pharmacy inventory", ADMIN: "Administration" };
 const ROLE_TEXT = { DOCTOR: "Doctor", PATIENT: "Patient", PHARMACY_STAFF: "Pharmacy staff", ADMIN: "Administrator" };
@@ -30,17 +31,14 @@ const ICONS = {
 
 export default function App() {
   const { user, role, signOut } = useAuth();
-  const [showProfile, setShowProfile] = useState(false);
-  const [patientTab, setPatientTab] = useState("overview");
+  // The address bar decides what is open: "/appts" is the appointments tab, "/profile" the profile page, "/" the home tab.
+  const [seg, navigate] = usePath();
+  const showProfile = seg === "profile";
   // The link in the verification email opens this page, whether or not someone is signed in.
   if (window.location.pathname === "/verify-email") return <><LoadingBar /><VerifyEmail /></>;
   if (!user) return <><LoadingBar /><Login /></>;
   // A search result opens the matching tab. The screen may need a moment to appear if the profile was open.
-  const goTo = (tab) => {
-    setShowProfile(false);
-    if (role === "PATIENT") setPatientTab(tab);
-    else setTimeout(() => window.dispatchEvent(new CustomEvent("medsync-goto", { detail: { tab } })), 30);
-  };
+  const goTo = (tab) => navigate(tab);
   const Screen = SCREENS[role];
   return (
     <>
@@ -50,14 +48,14 @@ export default function App() {
         <aside className="sidebar">
           <div className="brand"><Brand size={32} /><span>MedSync</span></div>
           <nav className="nav" aria-label="Main">
-            <button className={showProfile ? "" : "active"} onClick={() => setShowProfile(false)}><Icon d={ICONS.overview} />Overview</button>
-            <button className={showProfile ? "active" : ""} onClick={() => setShowProfile(true)}><Icon d={ICONS.profile} />My profile</button>
-            <button onClick={() => signOut()}><Icon d={ICONS.out} />Sign out</button>
+            <button className={showProfile ? "" : "active"} onClick={() => navigate("")}><Icon d={ICONS.overview} />Overview</button>
+            <button className={showProfile ? "active" : ""} onClick={() => navigate("profile")}><Icon d={ICONS.profile} />My profile</button>
+            <button onClick={() => { navigate(""); signOut(); }}><Icon d={ICONS.out} />Sign out</button>
           </nav>
           <div className="promo">
             <i className="cap" aria-hidden="true"><b /></i>
             <p>Update your details or change your password.</p>
-            <button onClick={() => setShowProfile(true)}>Settings</button>
+            <button onClick={() => navigate("profile")}>Settings</button>
           </div>
         </aside>
         <div className="content">
@@ -68,7 +66,7 @@ export default function App() {
             </div>
             <div className="topbar-right">
               <SearchBox onPick={goTo} />
-              {role === "PATIENT" && <NotificationBell onViewAll={() => { setShowProfile(false); setPatientTab("notifications"); }} />}
+              {role === "PATIENT" && <NotificationBell onViewAll={() => navigate("notifications")} />}
               <ThemeToggle round />
               <div className="usercard">
                 <span className="avatar" aria-hidden="true">{initials(user.name)}</span>
@@ -77,7 +75,7 @@ export default function App() {
             </div>
           </header>
           <main className="shell">
-            {showProfile ? <Profile onClose={() => setShowProfile(false)} /> : Screen ? <Screen tab={patientTab} setTab={setPatientTab} /> : <p className="error">Unknown role.</p>}
+            {showProfile ? <Profile onClose={() => navigate("")} /> : Screen ? <Screen tab={seg} setTab={navigate} /> : <p className="error">Unknown role.</p>}
           </main>
         </div>
       </div>

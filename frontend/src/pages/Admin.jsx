@@ -5,12 +5,14 @@ import { AreaChart, BarChart, Donut } from "../components/Charts";
 import { downloadFile } from "../components/download";
 import AshBurstButton from "../components/AshBurstButton";
 import { confirmDialog, promptDialog } from "../components/Dialog";
+import { pickTab } from "../router";
 
 const TABS = [["users", "Users"], ["create", "Create account"], ["pharmacy", "New pharmacy"], ["analytics", "Analytics"], ["reports", "Reports"], ["automation", "Automation"]];
 const ROLE_TEXT = { DOCTOR: "Doctor", PATIENT: "Patient", PHARMACY_STAFF: "Pharmacy staff", ADMIN: "Admin" };
 
-export default function Admin() {
-  const [tab, setTab] = useState("users");
+// The open tab comes from the address bar (see router.js).
+export default function Admin({ tab: shownTab, setTab }) {
+  const tab = pickTab(shownTab, TABS.map(([k]) => k), "users");
   useGoto(setTab);
   const [flash, setFlash] = useState({});
   const go = (k) => { setTab(k); setFlash({}); };
