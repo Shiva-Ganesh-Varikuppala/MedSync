@@ -109,10 +109,10 @@ export default function Appointments({ role }) {
             )}
             <div className="actions">
               {role === "PATIENT" && ["REQUESTED", "CONFIRMED"].includes(a.status) && !a.is_past && (
-                <button className="secondary" onClick={() => cancel(a)}>Cancel</button>
+                <button className="danger-soft" onClick={() => cancel(a)}>Cancel</button>
               )}
               {role === "DOCTOR" && a.status === "REQUESTED" && !a.is_past && <button onClick={() => act(a, "confirm", {}, "Appointment confirmed.")}>Confirm</button>}
-              {role === "DOCTOR" && a.status === "REQUESTED" && !a.is_past && <button className="secondary" onClick={() => decline(a)}>Decline</button>}
+              {role === "DOCTOR" && a.status === "REQUESTED" && !a.is_past && <button className="danger-soft" onClick={() => decline(a)}>Decline</button>}
               {role === "DOCTOR" && ["REQUESTED", "CONFIRMED"].includes(a.status) && !a.is_past && <button className="secondary" onClick={() => { setMoving(a.appointment_id); setMv({ date: a.scheduled_at.slice(0, 10) > todayStr() ? a.scheduled_at.slice(0, 10) : tomorrow(), time: a.scheduled_at.slice(11, 16) }); }}>Reschedule</button>}
               {role === "DOCTOR" && a.status === "CONFIRMED" && a.is_past ? <button onClick={() => act(a, "complete", {}, "Marked as completed.")}>Mark completed</button> : null}
             </div>

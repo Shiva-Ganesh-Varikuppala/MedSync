@@ -8,6 +8,7 @@ import Appointments from "../components/Appointments";
 import TemplateBar from "../components/TemplateBar";
 import DoctorCalendar from "../components/DoctorCalendar";
 import { confirmDialog } from "../components/Dialog";
+import { DoctorOverview } from "../components/Overview";
 
 const FREQUENCIES = [[1, "Once daily"], [2, "Twice daily"], [3, "Three times daily"], [4, "Four times daily"]];
 // Count of prescriptions per month for the last six months, oldest first.
@@ -22,19 +23,20 @@ const addDays = (d, n) => { const x = new Date(`${d}T00:00:00Z`); x.setUTCDate(x
 const newItem = (m) => ({ key: Math.random(), medicine_id: m.medicine_id, label: `${m.name} ${m.strength || ""}`.trim(), dosage: "", frequency_per_day: 1, start_date: today(), end_date: addDays(today(), 6) });
 
 export default function Doctor() {
-  const [tab, setTab] = useState("patients");
+  const [tab, setTab] = useState("overview");
   const [patient, setPatient] = useState(null); // chosen patient, shared by the tabs
   const [flash, setFlash] = useState({});
   useGoto(setTab);
   return (
     <>
       <nav className="tabs" role="tablist">
-        {[["patients", "Patients"], ["new", "New prescription"], ["mine", "My prescriptions"], ["appts", "Appointments"], ["schedule", "Schedule"]].map(([k, label]) => (
+        {[["overview", "Overview"], ["patients", "Patients"], ["new", "New prescription"], ["mine", "My prescriptions"], ["appts", "Appointments"], ["schedule", "Schedule"]].map(([k, label]) => (
           <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? "" : "secondary"} onClick={() => { setTab(k); setFlash({}); }}>{label}</button>
         ))}
       </nav>
       <Notice {...flash} />
       {patient && <p className="muted">Selected patient: <b>{patient.name}</b> (ID {patient.patient_id}) <button className="link" onClick={() => setPatient(null)}>clear</button></p>}
+      {tab === "overview" && <DoctorOverview go={(k) => { setTab(k); setFlash({}); }} />}
       {tab === "patients" && <Patients patient={patient} choose={(p) => { setPatient(p); }} startRx={() => setTab("new")} />}
       {tab === "new" && <NewPrescription patient={patient} goPatients={() => setTab("patients")} done={(msg) => { setFlash({ success: msg }); setTab("mine"); }} />}
       {tab === "mine" && <Mine setFlash={setFlash} />}

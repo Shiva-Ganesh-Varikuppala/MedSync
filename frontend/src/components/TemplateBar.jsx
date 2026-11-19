@@ -66,7 +66,7 @@ export default function TemplateBar({ items, diagnosis, notes, onApply }) {
           {templates.map((t) => <option key={t.template_id} value={t.template_id}>{t.name} ({t.items.length} medicine{t.items.length === 1 ? "" : "s"})</option>)}
         </select>
         <button type="button" disabled={!picked} onClick={apply}>Use template</button>
-        <button type="button" className="secondary" disabled={!picked} onClick={remove}>Delete</button>
+        <button type="button" className="danger-soft" disabled={!picked} onClick={remove}>Delete</button>
       </div>
       <div className="inline">
         <input aria-label="New template name" placeholder="Save the medicines below as a template…" maxLength={100} value={name} onChange={(e) => setName(e.target.value)}

@@ -69,7 +69,7 @@ export default function DoctorCalendar() {
                         {x.status === "REQUESTED" && (
                           <>
                             <button disabled={busy === x.appointment_id} onClick={() => act(x, "confirm", undefined, ctx)}>Confirm</button>
-                            <button className="secondary" disabled={busy === x.appointment_id} onClick={() => decline(x, ctx)}>Decline</button>
+                            <button className="danger-soft" disabled={busy === x.appointment_id} onClick={() => decline(x, ctx)}>Decline</button>
                           </>
                         )}
                         {x.status === "CONFIRMED" && <button disabled={busy === x.appointment_id} onClick={() => act(x, "complete", undefined, ctx)}>Mark completed</button>}

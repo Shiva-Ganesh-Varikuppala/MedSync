@@ -6,14 +6,15 @@ import MedicinePicker from "../components/MedicinePicker";
 import { BarChart } from "../components/Charts";
 import StockCalendar from "../components/StockCalendar";
 import { confirmDialog } from "../components/Dialog";
+import { PharmacyOverview } from "../components/Overview";
 
 const today = () => new Date().toISOString().slice(0, 10);
 const STATUS_TEXT = { VALID: "In date", EXPIRING_SOON: "Expiring soon", EXPIRED: "Expired" };
-const TABS = [["inventory", "Inventory"], ["dispense", "Dispense"], ["history", "Dispensing history"], ["receive", "Receive stock"], ["alerts", "Alerts"], ["calendar", "Expiry calendar"], ["catalog", "Medicine catalog"]];
+const TABS = [["overview", "Overview"], ["inventory", "Inventory"], ["dispense", "Dispense"], ["history", "Dispensing history"], ["receive", "Receive stock"], ["alerts", "Alerts"], ["calendar", "Expiry calendar"], ["catalog", "Medicine catalog"]];
 
 export default function Pharmacy() {
   const { user } = useAuth();
-  const [tab, setTab] = useState("inventory");
+  const [tab, setTab] = useState("overview");
   useGoto(setTab);
   const [flash, setFlash] = useState({});
   if (!user.pharmacy_id) return <p className="error">Your account is not linked to a pharmacy. Ask an administrator.</p>;
@@ -24,6 +25,7 @@ export default function Pharmacy() {
         {TABS.map(([k, l]) => <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? "" : "secondary"} onClick={() => go(k)}>{l}</button>)}
       </nav>
       <Notice {...flash} />
+      {tab === "overview" && <PharmacyOverview pid={user.pharmacy_id} go={go} />}
       {tab === "inventory" && <Inventory pid={user.pharmacy_id} setFlash={setFlash} />}
       {tab === "dispense" && <Dispense pid={user.pharmacy_id} setFlash={setFlash} />}
       {tab === "history" && <DispensingHistory pid={user.pharmacy_id} />}
@@ -85,7 +87,7 @@ function Inventory({ pid, setFlash }) {
           <div className="actions">
             <input type="number" className="qty" placeholder="+/- qty" value={delta[b.batch_id] ?? ""} onChange={(e) => setDelta({ ...delta, [b.batch_id]: e.target.value })} aria-label={`Quantity change for batch ${b.batch_number}`} />
             <button onClick={() => adjust(b)}>Apply</button>
-            {b.inventory_status === "EXPIRED" && <button className="secondary" onClick={() => remove(b)}>Remove</button>}
+            {b.inventory_status === "EXPIRED" && <button className="danger-soft" onClick={() => remove(b)}>Remove</button>}
           </div>
         </>
       )} />

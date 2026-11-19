@@ -1,0 +1,34 @@
+/* "At a glance" cards on each role's Overview tab. Classes are prefixed glance-. */
+.glance-hello { margin-bottom: 1rem; }
+.glance-hello h2 { font-size: 1.5rem; }
+.glance-hello p { margin: 0.2rem 0 0; }
+.glances { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 1.1rem; margin-bottom: 1.4rem; }
+
+button.glance {
+  position: relative; overflow: hidden; display: grid; gap: 0.25rem; align-content: start; justify-items: start; text-align: left;
+  padding: 1.1rem 1.2rem 1.15rem; min-height: 150px; border-radius: 20px; font-weight: 400;
+  background: var(--surface); color: var(--ink); border: 1px solid var(--line); box-shadow: var(--shadow);
+  animation: rise 0.35s ease both;
+}
+button.glance:hover:not(:disabled) { background: var(--surface); transform: translateY(-3px); box-shadow: 0 18px 30px -16px rgba(91, 63, 208, 0.45); }
+button.glance:active:not(:disabled) { transform: translateY(0); }
+.glance-icon { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; color: #fff; margin-bottom: 0.45rem; box-shadow: 0 8px 14px -8px rgba(0, 0, 0, 0.45); }
+.g-purple .glance-icon { background: linear-gradient(145deg, #b39bff, #7b5cf0); }
+.g-orange .glance-icon { background: linear-gradient(145deg, #ffa56a, #fb7b3a); }
+.g-yellow .glance-icon { background: linear-gradient(145deg, #ffd86b, #ffb52e); }
+.g-red .glance-icon { background: linear-gradient(145deg, #ff8f8f, #e5484d); }
+.g-blue .glance-icon { background: linear-gradient(145deg, #7fd9f5, #1ea7d8); }
+.glance-value { font-family: var(--display); font-weight: 800; font-size: 1.9rem; line-height: 1.1; letter-spacing: -0.03em; }
+.glance-label { font-weight: 700; }
+.glance-hint { color: var(--ink-soft); font-size: 0.85rem; line-height: 1.35; overflow-wrap: anywhere; }
+
+/* needs attention: a pulsing dot in the corner */
+.glance.attn::after { content: ""; position: absolute; top: 14px; right: 14px; width: 10px; height: 10px; border-radius: 50%; background: var(--coral); box-shadow: 0 0 0 0 rgba(255, 138, 76, 0.6); animation: glance-pulse 1.8s ease-out infinite; }
+@keyframes glance-pulse { to { box-shadow: 0 0 0 10px rgba(255, 138, 76, 0); } }
+
+/* loading skeleton */
+.glance-value.skel, .glance-hint.skel { display: block; border-radius: 8px; color: transparent; background: linear-gradient(90deg, var(--tint) 25%, var(--tint-hover) 50%, var(--tint) 75%); background-size: 200% 100%; animation: glance-shimmer 1.2s linear infinite; }
+.glance-value.skel { width: 4.5rem; height: 1.9rem; }
+.glance-hint.skel { width: 80%; height: 0.9rem; }
+@keyframes glance-shimmer { to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .glance.attn::after, .glance-value.skel, .glance-hint.skel { animation: none; } }

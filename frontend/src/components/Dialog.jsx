@@ -87,7 +87,7 @@ function DialogBox({ item, onClose }) {
         {touched && problem && <p className="dlg-error" role="alert">{problem}</p>}
         <div className="dlg-actions">
           <button type="button" ref={cancelBtn} className="secondary" onClick={cancel}>{spec.cancelLabel || "Cancel"}</button>
-          <button type="submit" ref={confirmBtn} className={spec.danger ? "dlg-danger" : ""} disabled={!canSubmit}>{spec.confirmLabel || "OK"}</button>
+          <button type="submit" ref={confirmBtn} className={spec.danger ? "danger" : ""} disabled={!canSubmit}>{spec.confirmLabel || "OK"}</button>
         </div>
       </form>
     </div>

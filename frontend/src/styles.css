@@ -29,6 +29,15 @@
   --red: #b3243b;
   --red-bg: #fde7ea;
   --radius: 22px;
+  /* Button tokens: every button variant below reads these, so a theme change is one edit. */
+  --btn-radius: 14px;
+  --btn-primary: linear-gradient(135deg, #8f72f5, #7b5cf0);
+  --btn-primary-hover: linear-gradient(135deg, #8266ee, #6a49e6);
+  --btn-glow: rgba(91, 63, 208, 0.7);
+  --btn-on: #ffffff;
+  --danger-solid: #d83b52;
+  --danger-hover: #c02a41;
+  --focus-ring: rgba(123, 92, 240, 0.45);
   --shadow: 0 1px 2px rgba(27, 26, 58, 0.04), 0 12px 32px -12px rgba(91, 63, 208, 0.14);
   --display: "Urbanist", "Figtree", ui-sans-serif, system-ui, sans-serif;
   --body: "Urbanist", "Figtree", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -66,6 +75,10 @@
   --glass-line: rgba(255, 255, 255, 0.06);
   --bg: linear-gradient(160deg, #0f0e1b 0%, #15142a 50%, #0e0d19 100%);
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 32px -12px rgba(0, 0, 0, 0.55);
+  --danger-solid: #e0485f;
+  --danger-hover: #ee5c72;
+  --btn-glow: rgba(155, 130, 255, 0.55);
+  --focus-ring: rgba(155, 130, 255, 0.6);
 }
 
 * { box-sizing: border-box; }
@@ -90,15 +103,15 @@ p { margin: 0 0 0.5rem; }
 
 button {
   border: 0;
-  border-radius: 14px;
-  background: linear-gradient(135deg, #8f72f5, #7b5cf0);
-  color: #fff;
+  border-radius: var(--btn-radius);
+  background: var(--btn-primary);
+  color: var(--btn-on);
   font-weight: 600;
   padding: 0.62rem 1.15rem;
   cursor: pointer;
   transition: background 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
 }
-button:hover:not(:disabled) { background: linear-gradient(135deg, #8266ee, #6a49e6); transform: translateY(-1px); box-shadow: 0 8px 18px -8px rgba(91, 63, 208, 0.7); }
+button:hover:not(:disabled) { background: var(--btn-primary-hover); transform: translateY(-1px); box-shadow: 0 8px 18px -8px var(--btn-glow); }
 button:active:not(:disabled) { transform: translateY(0); box-shadow: none; }
 button:disabled { opacity: 0.55; cursor: not-allowed; }
 
@@ -116,7 +129,16 @@ button.link {
 }
 button.link:hover:not(:disabled) { background: none; transform: none; box-shadow: none; color: var(--indigo-deep); }
 
-:focus-visible { outline: 3px solid rgba(123, 92, 240, 0.45); outline-offset: 2px; }
+/* More button variants. Use className="danger" for the main destructive action, "danger-soft" for a quieter one,
+   "small" for tight spots and "block" for full width. They combine, e.g. className="danger small". */
+button.danger { background: var(--danger-solid); color: #fff; }
+button.danger:hover:not(:disabled) { background: var(--danger-hover); box-shadow: 0 8px 18px -8px var(--danger-solid); }
+button.danger-soft { background: var(--red-bg); color: var(--red); }
+button.danger-soft:hover:not(:disabled) { background: var(--red-bg); filter: brightness(0.96); box-shadow: none; }
+button.small { padding: 0.32rem 0.8rem; font-size: 0.85rem; border-radius: 10px; }
+button.block { display: block; width: 100%; }
+
+:focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 2px; }
 
 /* ── Loading bar ────────────────────────────────────────── */
 

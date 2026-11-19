@@ -29,7 +29,7 @@ export default function PrescriptionDetail({ id, onCancel, canAttach = false }) 
       <Attachments prescriptionId={id} canEdit={canAttach} />
       {error && <p className="error">{error}</p>}
       <button className="secondary" disabled={saving} onClick={pdf}>{saving ? "Preparing…" : "Download PDF"}</button>
-      {onCancel && rx.status === "ACTIVE" && <button className="secondary" onClick={() => onCancel(rx)}>Cancel prescription</button>}
+      {onCancel && rx.status === "ACTIVE" && <button className="danger-soft" onClick={() => onCancel(rx)}>Cancel prescription</button>}
     </div>
   );
 }

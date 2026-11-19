@@ -56,7 +56,7 @@ export default function Attachments({ prescriptionId, canEdit }) {
           <div><b>{f.file_name}</b> <span className="muted small">{kb(f.size_bytes)} · added by {f.uploaded_by_name}</span></div>
           <div className="actions">
             <button className="secondary" onClick={() => open(f)}>Download</button>
-            {canEdit && <button className="secondary" onClick={() => remove(f)}>Delete</button>}
+            {canEdit && <button className="danger-soft" onClick={() => remove(f)}>Delete</button>}
           </div>
         </div>
       ))}

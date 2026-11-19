@@ -126,7 +126,7 @@ function Users({ setFlash }) {
           <>
             <strong>{u.name} <span className="badge">{ROLE_TEXT[u.role]}</span> {!u.is_active && <span className="badge EXPIRED">Deactivated</span>}</strong>
             <span>{u.email}{u.specialization ? ` · ${u.specialization} (${u.license_number})` : ""}{u.pharmacy_name ? ` · ${u.pharmacy_name}` : ""}</span>
-            {u.user_id !== user.user_id && <div className="actions"><button className="secondary" onClick={() => resetPw(u)}>Reset password</button><button className="secondary" onClick={() => toggle(u)}>{u.is_active ? "Deactivate" : "Re-activate"}</button>{u.role !== "ADMIN" && <AshBurstButton label="Delete" style={{ background: "#e5484d", color: "#fff" }} action={() => remove(u)} onBurned={() => load(page)} />}</div>}
+            {u.user_id !== user.user_id && <div className="actions"><button className="secondary" onClick={() => resetPw(u)}>Reset password</button><button className="secondary" onClick={() => toggle(u)}>{u.is_active ? "Deactivate" : "Re-activate"}</button>{u.role !== "ADMIN" && <AshBurstButton label="Delete" className="danger" action={() => remove(u)} onBurned={() => load(page)} />}</div>}
           </>
         )} />
         {more && <button className="secondary" onClick={loadMore}>Load more</button>}

@@ -21,8 +21,6 @@
 .dlg-hint code { padding: 1px 6px; border-radius: 6px; background: var(--tint, #efeafe); color: var(--ink, #1e1b3a); user-select: all; overflow-wrap: anywhere; }
 .dlg-error { margin: 8px 0 0; color: var(--red, #b3243b); font-size: .85rem; }
 .dlg-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; flex-wrap: wrap; }
-.dlg .dlg-danger { background: var(--red, #b3243b); color: #fff; border-color: transparent; }
-.dlg .dlg-danger:disabled { opacity: .45; cursor: not-allowed; }
 @keyframes dlg-fade { from { opacity: 0; } to { opacity: 1; } }
 @keyframes dlg-pop { from { opacity: 0; transform: translateY(10px) scale(.96); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .dlg-backdrop, .dlg { animation: none; } }

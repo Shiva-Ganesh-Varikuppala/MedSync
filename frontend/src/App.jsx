@@ -31,7 +31,7 @@ const ICONS = {
 export default function App() {
   const { user, role, signOut } = useAuth();
   const [showProfile, setShowProfile] = useState(false);
-  const [patientTab, setPatientTab] = useState("today");
+  const [patientTab, setPatientTab] = useState("overview");
   // The link in the verification email opens this page, whether or not someone is signed in.
   if (window.location.pathname === "/verify-email") return <><LoadingBar /><VerifyEmail /></>;
   if (!user) return <><LoadingBar /><Login /></>;

@@ -6,23 +6,24 @@ import { BarChart, Donut } from "../components/Charts";
 import { NotificationList } from "../components/Notifications";
 import Appointments from "../components/Appointments";
 import CareCalendar from "../components/CareCalendar";
+import { PatientOverview } from "../components/Overview";
 
 const hhmm = (s) => s.slice(11, 16);
 const day = (s) => s.slice(0, 10);
 const prettyDay = (d) => new Date(`${d}T00:00:00`).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
 
 export default function Patient({ tab: shownTab, setTab: setShownTab }) {
-  const [ownTab, setOwnTab] = useState("today");
+  const [ownTab, setOwnTab] = useState("overview");
   const tab = shownTab || ownTab;          // the top-bar bell can switch tabs from outside
   const setTab = setShownTab || setOwnTab;
   return (
     <>
       <nav className="tabs" role="tablist">
-        {[["today", "Today & reminders"], ["calendar", "Calendar"], ["rx", "My prescriptions"], ["appts", "Appointments"], ["notifications", "Notifications"]].map(([k, l]) => (
+        {[["overview", "Overview"], ["today", "Today & reminders"], ["calendar", "Calendar"], ["rx", "My prescriptions"], ["appts", "Appointments"], ["notifications", "Notifications"]].map(([k, l]) => (
           <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? "" : "secondary"} onClick={() => setTab(k)}>{l}</button>
         ))}
       </nav>
-      {tab === "today" ? <Reminders /> : tab === "calendar" ? <CareCalendar /> : tab === "rx" ? <Prescriptions /> : tab === "appts" ? <Appointments role="PATIENT" /> : <NotificationList />}
+      {tab === "overview" ? <PatientOverview go={setTab} /> : tab === "today" ? <Reminders /> : tab === "calendar" ? <CareCalendar /> : tab === "rx" ? <Prescriptions /> : tab === "appts" ? <Appointments role="PATIENT" /> : <NotificationList />}
     </>
   );
 }
