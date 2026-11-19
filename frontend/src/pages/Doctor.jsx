@@ -6,6 +6,7 @@ import PrescriptionDetail from "../components/PrescriptionDetail";
 import { AreaChart } from "../components/Charts";
 import Appointments from "../components/Appointments";
 import TemplateBar from "../components/TemplateBar";
+import DoctorCalendar from "../components/DoctorCalendar";
 
 const FREQUENCIES = [[1, "Once daily"], [2, "Twice daily"], [3, "Three times daily"], [4, "Four times daily"]];
 // Count of prescriptions per month for the last six months, oldest first.
@@ -27,7 +28,7 @@ export default function Doctor() {
   return (
     <>
       <nav className="tabs" role="tablist">
-        {[["patients", "Patients"], ["new", "New prescription"], ["mine", "My prescriptions"], ["appts", "Appointments"]].map(([k, label]) => (
+        {[["patients", "Patients"], ["new", "New prescription"], ["mine", "My prescriptions"], ["appts", "Appointments"], ["schedule", "Schedule"]].map(([k, label]) => (
           <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? "" : "secondary"} onClick={() => { setTab(k); setFlash({}); }}>{label}</button>
         ))}
       </nav>
@@ -37,6 +38,7 @@ export default function Doctor() {
       {tab === "new" && <NewPrescription patient={patient} goPatients={() => setTab("patients")} done={(msg) => { setFlash({ success: msg }); setTab("mine"); }} />}
       {tab === "mine" && <Mine setFlash={setFlash} />}
       {tab === "appts" && <Appointments role="DOCTOR" />}
+      {tab === "schedule" && <DoctorCalendar />}
     </>
   );
 }

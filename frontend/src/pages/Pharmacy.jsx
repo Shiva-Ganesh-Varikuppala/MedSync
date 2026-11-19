@@ -4,10 +4,11 @@ import { List, Notice, Panel, Tiles, useGoto } from "../components/ui";
 import Dispense from "./pharmacy/Dispense";
 import MedicinePicker from "../components/MedicinePicker";
 import { BarChart } from "../components/Charts";
+import StockCalendar from "../components/StockCalendar";
 
 const today = () => new Date().toISOString().slice(0, 10);
 const STATUS_TEXT = { VALID: "In date", EXPIRING_SOON: "Expiring soon", EXPIRED: "Expired" };
-const TABS = [["inventory", "Inventory"], ["dispense", "Dispense"], ["history", "Dispensing history"], ["receive", "Receive stock"], ["alerts", "Alerts"], ["catalog", "Medicine catalog"]];
+const TABS = [["inventory", "Inventory"], ["dispense", "Dispense"], ["history", "Dispensing history"], ["receive", "Receive stock"], ["alerts", "Alerts"], ["calendar", "Expiry calendar"], ["catalog", "Medicine catalog"]];
 
 export default function Pharmacy() {
   const { user } = useAuth();
@@ -27,6 +28,7 @@ export default function Pharmacy() {
       {tab === "history" && <DispensingHistory pid={user.pharmacy_id} />}
       {tab === "receive" && <Receive pid={user.pharmacy_id} done={(m) => { setFlash({ success: m }); setTab("inventory"); }} />}
       {tab === "alerts" && <Alerts pid={user.pharmacy_id} />}
+      {tab === "calendar" && <StockCalendar pid={user.pharmacy_id} />}
       {tab === "catalog" && <Catalog setFlash={setFlash} />}
     </>
   );

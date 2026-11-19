@@ -1598,3 +1598,123 @@ test("phone verification: without an SMS provider the code is printed only in th
         await limits.resetAllRateLimits();
     }
 });
+
+// ---------------------------------------------------------------------------------------------
+// Patient care calendar: one read-only endpoint with doses, appointments and course dates.
+// ---------------------------------------------------------------------------------------------
+test("calendar: a patient gets their own doses, appointments and course dates for a date range; validation and ownership hold", async () => {
+    await require("../src/middleware/rateLimit").resetAllRateLimits();
+    await throttle.resetAllThrottles();
+    assert.equal((await mailReg("cal.patient@medsync.dev")).status, 201);
+    await pool.query("UPDATE users SET email_verified_at = NOW() WHERE email = 'cal.patient@medsync.dev'");
+    const l = await call("POST", "/api/auth/login", { body: { email: "cal.patient@medsync.dev", password: "Strong@123" } });
+    tokens.calpat = l.json.data.token;
+    const [[{ patient_id: patientId }]] = await pool.query("SELECT patient_id FROM patients p JOIN users u ON u.user_id = p.user_id WHERE u.email = 'cal.patient@medsync.dev'");
+    const [[{ doctor_id: doctorId }]] = await pool.query("SELECT d.doctor_id FROM doctors d JOIN users u ON u.user_id = d.user_id WHERE u.email = 'ananya.rao@medsync.dev'");
+    const rx = await call("POST", "/api/prescriptions", { as: "doc", body: rxBody(patientId) });
+    assert.equal(rx.status, 201);
+    await pool.query("INSERT INTO appointments (patient_id, doctor_id, scheduled_at, reason, status) VALUES (?, ?, ?, 'Review', 'CONFIRMED')", [patientId, doctorId, `${inDays(3)} 10:00:00`]);
+
+    const range = `from=${inDays(-1)}&to=${inDays(7)}`;
+    const cal = (q, as = "calpat") => call("GET", `/api/patients/me/calendar?${q}`, { as });
+    const r = await cal(range);
+    assert.equal(r.status, 200);
+    const d = r.json.data;
+    assert.equal(d.from, inDays(-1));
+    assert.ok(d.reminders.length >= 3, "the generated doses are listed");
+    assert.ok(d.reminders.every((x) => /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(x.scheduled_at) && ["PENDING", "TAKEN", "SKIPPED", "MISSED"].includes(x.status)));
+    assert.ok(d.reminders.every((x) => x.prescription_id === rx.json.data.prescription_id), "only this patient's prescription");
+    const [[{ n }]] = await pool.query("SELECT COUNT(*) AS n FROM reminders r JOIN prescription_items i ON i.prescription_item_id = r.prescription_item_id JOIN prescriptions p ON p.prescription_id = i.prescription_id WHERE p.patient_id = ?", [patientId]);
+    assert.equal(d.reminders.length, n);
+    assert.equal(d.courses.length, 2);
+    assert.ok(d.courses.every((c) => c.start_date === inDays(0)), "course dates are plain YYYY-MM-DD");
+    assert.equal(d.appointments.length, 1);
+    assert.equal(d.appointments[0].scheduled_at, `${inDays(3)} 10:00`);
+    assert.ok(d.appointments[0].doctor_name);
+
+    // a narrower range leaves out what is not in it
+    const later = (await cal(`from=${inDays(5)}&to=${inDays(9)}`)).json.data;
+    assert.equal(later.appointments.length, 0);
+    assert.equal(later.courses.length, 0, "the courses ended before this range");
+
+    // answering a dose with the existing endpoint shows up in the calendar
+    const first = d.reminders[0];
+    assert.equal((await call("PATCH", `/api/reminders/${first.reminder_id}/status`, { as: "calpat", body: { status: "TAKEN" } })).status, 200);
+    assert.equal((await cal(range)).json.data.reminders.find((x) => x.reminder_id === first.reminder_id).status, "TAKEN");
+
+    // ownership and validation
+    const other = (await cal(range, "pat1")).json.data;
+    assert.ok(other.reminders.every((x) => x.prescription_id !== rx.json.data.prescription_id), "another patient never sees these doses");
+    assert.equal(other.appointments.filter((a) => a.reason === "Review").length, 0);
+    assert.equal((await call("GET", `/api/patients/me/calendar?${range}`)).status, 401);
+    assert.equal((await cal(range, "doc")).status, 403, "patients only");
+    assert.equal((await cal("to=2026-01-01")).status, 400, "from is required");
+    assert.equal((await cal("from=2026-01-10&to=2026-01-01")).status, 400, "to before from");
+    assert.equal((await cal("from=2026-01-01&to=2026-06-01")).status, 400, "range too long");
+    assert.equal((await cal("from=2026-13-01&to=2026-13-05")).status, 400, "not a real date");
+    assert.equal((await cal("from=2026-01-01&to=2026-03-03")).status, 200, "62 days is allowed");
+});
+
+// ---------------------------------------------------------------------------------------------
+// Calendar extras: .ics export, doctor schedule, pharmacy stock-expiry calendar.
+// ---------------------------------------------------------------------------------------------
+test("calendar .ics: only upcoming pending doses and open appointments, valid iCalendar text, audited, patients only", async () => {
+    const [[{ patient_id: pid }]] = await pool.query("SELECT patient_id FROM patients p JOIN users u ON u.user_id = p.user_id WHERE u.email = 'arjun.kumar@medsync.dev'");
+    const [[{ doctor_id: did }]] = await pool.query("SELECT d.doctor_id FROM doctors d JOIN users u ON u.user_id = d.user_id WHERE u.email = 'ananya.rao@medsync.dev'");
+    await pool.query("INSERT INTO appointments (patient_id, doctor_id, scheduled_at, reason, status) VALUES (?, ?, ?, 'Ics, check; up', 'CONFIRMED'), (?, ?, ?, 'Cancelled visit', 'CANCELLED')", [pid, did, `${inDays(4)} 09:30:00`, pid, did, `${inDays(5)} 09:30:00`]);
+    const get = (as) => fetch(`${base}/api/patients/me/calendar.ics`, { headers: as ? { Authorization: `Bearer ${tokens[as]}` } : {} });
+    const res = await get("pat1");
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get("content-type"), /^text\/calendar/);
+    assert.match(res.headers.get("content-disposition"), /attachment; filename="medsync-calendar-\d{4}-\d{2}-\d{2}\.ics"/);
+    const text = await res.text();
+    assert.ok(text.startsWith("BEGIN:VCALENDAR\r\n") && text.endsWith("END:VCALENDAR\r\n"));
+    assert.ok(text.includes(`DTSTART:${inDays(4).replace(/-/g, "")}T093000`), "the confirmed appointment is there");
+    assert.ok(text.includes("Ics\\, check\\; up"), "commas and semicolons are escaped");
+    assert.ok(!text.includes("Cancelled visit"), "cancelled appointments are left out");
+    assert.ok(text.split("\r\n").every((l) => Buffer.byteLength(l) <= 75), "lines are folded to 75 octets");
+    assert.equal((text.match(/BEGIN:VEVENT/g) || []).length, (text.match(/END:VEVENT/g) || []).length);
+    const [a] = await pool.query("SELECT 1 FROM audit_logs WHERE action = 'CALENDAR_EXPORT'");
+    assert.ok(a.length >= 1, "the export is audited");
+    assert.equal((await get(null)).status, 401);
+    assert.equal((await get("doc")).status, 403);
+    assert.equal((await fetch(`${base}/api/patients/me/calendar.ics?from=2026-13-01`, { headers: { Authorization: `Bearer ${tokens.pat1}` } })).status, 400);
+});
+
+test("doctor schedule: a doctor sees only their own appointments and course end dates; validation and roles hold", async () => {
+    const range = `from=${inDays(-1)}&to=${inDays(10)}`;
+    const sched = (q, as) => call("GET", `/api/doctors/me/calendar?${q}`, { as });
+    const mine = await sched(range, "doc");
+    assert.equal(mine.status, 200);
+    assert.ok(mine.json.data.appointments.some((a) => a.reason === "Cancelled visit" || a.reason.startsWith("Ics")), "their appointments are listed");
+    assert.ok(mine.json.data.appointments.every((a) => /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(a.scheduled_at) && a.patient_name));
+    assert.ok(Array.isArray(mine.json.data.followups));
+    const other = await sched(range, "doc2");
+    assert.equal(other.status, 200);
+    assert.equal(other.json.data.appointments.filter((a) => a.reason.startsWith("Ics")).length, 0, "another doctor never sees them");
+    assert.equal((await sched(range, "pat1")).status, 403);
+    assert.equal((await call("GET", `/api/doctors/me/calendar?${range}`)).status, 401);
+    assert.equal((await sched("from=2026-01-01&to=2026-06-01", "doc")).status, 400);
+    assert.equal((await sched("to=2026-01-01", "doc")).status, 400);
+});
+
+test("pharmacy stock calendar: own pharmacy only, in-stock live batches expiring in the range", async () => {
+    const pidOf = async (email) => (await pool.query("SELECT ps.pharmacy_id FROM pharmacy_staff ps JOIN users u ON u.user_id = ps.user_id WHERE u.email = ?", [email]))[0][0].pharmacy_id;
+    const p1 = await pidOf("neha.patel@medsync.dev");
+    const [[{ pharmacy_id: p2id }]] = await pool.query("SELECT pharmacy_id FROM pharmacies WHERE pharmacy_id <> ? ORDER BY pharmacy_id LIMIT 1", [p1]);
+    await pool.query("INSERT INTO medicine_batches (medicine_id, pharmacy_id, batch_number, quantity, expiry_date) VALUES (1, ?, 'CAL-OK', 7, ?), (1, ?, 'CAL-EMPTY', 0, ?), (1, ?, 'CAL-OTHER', 9, ?)", [p1, inDays(10), p1, inDays(11), p2id, inDays(12)]);
+    await pool.query("INSERT INTO medicine_batches (medicine_id, pharmacy_id, batch_number, quantity, expiry_date, deleted_at) VALUES (1, ?, 'CAL-GONE', 4, ?, NOW())", [p1, inDays(13)]);
+    const url = (id, q) => `/api/pharmacies/${id}/stock-calendar?${q}`;
+    const range = `from=${inDays(0)}&to=${inDays(30)}`;
+    const r = await call("GET", url(p1, range), { as: "staff1" });
+    assert.equal(r.status, 200);
+    const nums = r.json.data.batches.map((b) => b.batch_number);
+    assert.ok(nums.includes("CAL-OK"));
+    assert.ok(!nums.some((n) => ["CAL-EMPTY", "CAL-OTHER", "CAL-GONE"].includes(n)), "empty, other-pharmacy and removed batches are left out");
+    assert.equal(r.json.data.batches.find((b) => b.batch_number === "CAL-OK").expiry_date, inDays(10));
+    assert.equal(r.json.data.today, inDays(0));
+    assert.equal((await call("GET", url(p2id, range), { as: "staff1" })).status, 403, "not another pharmacy");
+    assert.equal((await call("GET", url(p1, range), { as: "doc" })).status, 403);
+    assert.equal((await call("GET", url(p1, range))).status, 401);
+    assert.equal((await call("GET", url(p1, "from=2026-01-01&to=2026-06-01"), { as: "staff1" })).status, 400);
+});

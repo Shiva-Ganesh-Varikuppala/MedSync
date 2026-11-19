@@ -5,6 +5,7 @@ import PrescriptionDetail from "../components/PrescriptionDetail";
 import { BarChart, Donut } from "../components/Charts";
 import { NotificationList } from "../components/Notifications";
 import Appointments from "../components/Appointments";
+import CareCalendar from "../components/CareCalendar";
 
 const hhmm = (s) => s.slice(11, 16);
 const day = (s) => s.slice(0, 10);
@@ -17,11 +18,11 @@ export default function Patient({ tab: shownTab, setTab: setShownTab }) {
   return (
     <>
       <nav className="tabs" role="tablist">
-        {[["today", "Today & reminders"], ["rx", "My prescriptions"], ["appts", "Appointments"], ["notifications", "Notifications"]].map(([k, l]) => (
+        {[["today", "Today & reminders"], ["calendar", "Calendar"], ["rx", "My prescriptions"], ["appts", "Appointments"], ["notifications", "Notifications"]].map(([k, l]) => (
           <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? "" : "secondary"} onClick={() => setTab(k)}>{l}</button>
         ))}
       </nav>
-      {tab === "today" ? <Reminders /> : tab === "rx" ? <Prescriptions /> : tab === "appts" ? <Appointments role="PATIENT" /> : <NotificationList />}
+      {tab === "today" ? <Reminders /> : tab === "calendar" ? <CareCalendar /> : tab === "rx" ? <Prescriptions /> : tab === "appts" ? <Appointments role="PATIENT" /> : <NotificationList />}
     </>
   );
 }

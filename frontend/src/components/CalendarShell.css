@@ -1,0 +1,12 @@
+/* Extra colours for the doctor and pharmacy calendars; the grid itself comes from CareCalendar.css. */
+.cdot.expired { background: radial-gradient(circle at 35% 30%, #ff9a9d, #dc2626 60%); }
+.cdot.soon { background: radial-gradient(circle at 35% 30%, #ffd98a, #f59e0b 60%); }
+.cdot.ok { background: radial-gradient(circle at 35% 30%, #86efac, #16a34a 60%); }
+.cdot.followup { background: radial-gradient(circle at 35% 30%, #c4b5fd, #8b5cf6 60%); }
+.cline.expired { background: rgba(220, 38, 38, 0.18); border-color: #dc2626; }
+.cline.soon { background: rgba(245, 158, 11, 0.2); border-color: #f59e0b; }
+.cline.ok { background: rgba(22, 163, 74, 0.16); border-color: #16a34a; }
+.cline.followup { background: rgba(139, 92, 246, 0.18); border-color: #8b5cf6; }
+.cpill.expired { background: rgba(220, 38, 38, 0.18); }
+.cpill.soon { background: rgba(245, 158, 11, 0.2); }
+.cpill.ok { background: rgba(22, 163, 74, 0.16); }
