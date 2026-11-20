@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useAuth } from "../auth";
+import { useI18n } from "../i18n";
 import "./Overview.css";
 
 // "At a glance" home screens: a row of cards per role. Every card loads on its own (a failure in one never blanks the others),
@@ -9,17 +10,17 @@ const ymd = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate(
 const at = (s) => new Date(String(s).replace(" ", "T").slice(0, 16));
 const hhmm = (d) => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 const plusDays = (n) => { const d = new Date(); d.setDate(d.getDate() + n); return d; };
-const shortDay = (d) => d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
+const shortDay = (d, locale) => d.toLocaleDateString(locale, { weekday: "short", day: "numeric", month: "short" });
 
-function rel(d, now = new Date()) {
+function rel(d, t, locale, now = new Date()) {
   const mins = Math.round((d - now) / 60000);
-  if (mins < 1) return "now";
-  if (mins < 60) return `in ${mins} min`;
-  if (ymd(d) === ymd(now)) return `today at ${hhmm(d)}`;
-  if (ymd(d) === ymd(plusDays(1))) return `tomorrow at ${hhmm(d)}`;
-  return `${shortDay(d)} at ${hhmm(d)}`;
+  if (mins < 1) return t("now");
+  if (mins < 60) return t("in {n} min", { n: mins });
+  if (ymd(d) === ymd(now)) return t("today at {time}", { time: hhmm(d) });
+  if (ymd(d) === ymd(plusDays(1))) return t("tomorrow at {time}", { time: hhmm(d) });
+  return t("{day} at {time}", { day: shortDay(d, locale), time: hhmm(d) });
 }
-const greeting = () => { const h = new Date().getHours(); return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening"; };
+const greeting = (t) => { const h = new Date().getHours(); return h < 12 ? t("Good morning") : h < 17 ? t("Good afternoon") : t("Good evening"); };
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
 const ICON = {
@@ -35,7 +36,10 @@ const ICON = {
 };
 
 // One card. value === null means "still loading".
-function Glance({ tone, icon, value, label, hint, onClick, attention }) {
+function Glance({ tone, icon, value, label: rawLabel, hint: rawHint, onClick, attention }) {
+  const { t } = useI18n();
+  const label = t(rawLabel);
+  const hint = rawHint ? t(rawHint) : rawHint;
   const loading = value === null;
   return (
     <button type="button" className={`glance g-${tone}${attention ? " attn" : ""}`} onClick={onClick}
@@ -73,19 +77,21 @@ function useGlances(make, deps = []) {
 
 function Frame({ title, subtitle, children }) {
   const { user } = useAuth();
+  const { t } = useI18n();
   const first = (user?.name || "").replace(/^Dr\.?\s*/i, "").split(" ")[0];
   return (
     <>
       <div className="glance-hello">
-        <h2>{greeting()}{first ? `, ${first}` : ""}</h2>
-        <p className="muted">{subtitle}</p>
+        <h2>{greeting(t)}{first ? `, ${first}` : ""}</h2>
+        <p className="muted">{t(subtitle)}</p>
       </div>
-      <section className="glances" aria-label={title}>{children}</section>
+      <section className="glances" aria-label={t(title)}>{children}</section>
     </>
   );
 }
 
 export function PatientOverview({ go }) {
+  const { t, locale } = useI18n();
   const g = useGlances((call) => ({
     due: call("/reminders/due").then((r) => r.data),
     rem: call("/patients/me/reminders").then((r) => r.data),
@@ -102,11 +108,11 @@ export function PatientOverview({ go }) {
       <Glance tone="orange" icon="check" attention={!!due && due.length > 0} onClick={() => go("today")}
         value={g.read("due", (d) => d.length)} label="Doses to confirm" hint={g.hintOf("due", (d) => (d.length ? "Tap to answer them" : "You are all caught up"))} />
       <Glance tone="purple" icon="clock" onClick={() => go("calendar")}
-        value={g.read("rem", (r) => { const d = nextDose(r); return d ? hhmm(at(d.scheduled_at)) : "None"; })} label="Next dose"
-        hint={g.hintOf("rem", (r) => { const d = nextDose(r); return d ? `${d.medicine_name} · ${rel(at(d.scheduled_at))}` : "No upcoming doses"; })} />
+        value={g.read("rem", (r) => { const d = nextDose(r); return d ? hhmm(at(d.scheduled_at)) : t("None"); })} label="Next dose"
+        hint={g.hintOf("rem", (r) => { const d = nextDose(r); return d ? `${d.medicine_name} · ${rel(at(d.scheduled_at), t, locale)}` : "No upcoming doses"; })} />
       <Glance tone="blue" icon="calendar" onClick={() => go("appts")}
-        value={g.read("appts", (rows) => { const a = nextAppt(rows); return a ? shortDay(at(a.scheduled_at)) : "None"; })} label="Next appointment"
-        hint={g.hintOf("appts", (rows) => { const a = nextAppt(rows); return a ? `${a.doctor_name} · ${a.status === "CONFIRMED" ? "Confirmed" : "Waiting for the doctor"}` : "Nothing booked"; })} />
+        value={g.read("appts", (rows) => { const a = nextAppt(rows); return a ? shortDay(at(a.scheduled_at), locale) : t("None"); })} label="Next appointment"
+        hint={g.hintOf("appts", (rows) => { const a = nextAppt(rows); return a ? `${a.doctor_name} · ${a.status === "CONFIRMED" ? t("Confirmed") : t("Waiting for the doctor")}` : "Nothing booked"; })} />
       <Glance tone="yellow" icon="file" onClick={() => go("rx")}
         value={g.read("rx", (rows) => rows.length)} label="Active prescriptions" hint={g.hintOf("rx", (rows) => (rows.length ? "Tap to see the details" : "No active prescriptions"))} />
       <Glance tone="green" icon="refresh" onClick={() => go("refills")}

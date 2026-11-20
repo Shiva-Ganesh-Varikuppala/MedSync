@@ -14,6 +14,7 @@ import { NotificationBell } from "./components/Notifications";
 import SearchBox from "./components/SearchBox";
 import DialogHost from "./components/Dialog";
 import { usePath } from "./router";
+import { LanguageSwitcher, useI18n } from "./i18n";
 
 const TITLES = { DOCTOR: "Doctor workspace", PATIENT: "Patient care", PHARMACY_STAFF: "Pharmacy inventory", ADMIN: "Administration" };
 const ROLE_TEXT = { DOCTOR: "Doctor", PATIENT: "Patient", PHARMACY_STAFF: "Pharmacy staff", ADMIN: "Administrator" };
@@ -31,6 +32,7 @@ const ICONS = {
 
 export default function App() {
   const { user, role, signOut } = useAuth();
+  const { t } = useI18n();
   // The address bar decides what is open: "/appts" is the appointments tab, "/profile" the profile page, "/" the home tab.
   const [seg, navigate] = usePath();
   const showProfile = seg === "profile";
@@ -48,29 +50,30 @@ export default function App() {
         <aside className="sidebar">
           <div className="brand"><Brand size={32} /><span>MedSync</span></div>
           <nav className="nav" aria-label="Main">
-            <button className={showProfile ? "" : "active"} onClick={() => navigate("")}><Icon d={ICONS.overview} />Overview</button>
-            <button className={showProfile ? "active" : ""} onClick={() => navigate("profile")}><Icon d={ICONS.profile} />My profile</button>
-            <button onClick={() => { navigate(""); signOut(); }}><Icon d={ICONS.out} />Sign out</button>
+            <button className={showProfile ? "" : "active"} onClick={() => navigate("")}><Icon d={ICONS.overview} />{t("Overview")}</button>
+            <button className={showProfile ? "active" : ""} onClick={() => navigate("profile")}><Icon d={ICONS.profile} />{t("My profile")}</button>
+            <button onClick={() => { navigate(""); signOut(); }}><Icon d={ICONS.out} />{t("Sign out")}</button>
           </nav>
           <div className="promo">
             <i className="cap" aria-hidden="true"><b /></i>
-            <p>Update your details or change your password.</p>
-            <button onClick={() => navigate("profile")}>Settings</button>
+            <p>{t("Update your details or change your password.")}</p>
+            <button onClick={() => navigate("profile")}>{t("Settings")}</button>
           </div>
         </aside>
         <div className="content">
           <header className="topbar">
             <div>
-              <p className="eyebrow">{showProfile ? "Account" : "Workspace"}</p>
-              <h1>{showProfile ? "My profile" : TITLES[role] || "MedSync"}</h1>
+              <p className="eyebrow">{showProfile ? t("Account") : t("Workspace")}</p>
+              <h1>{showProfile ? t("My profile") : t(TITLES[role] || "MedSync")}</h1>
             </div>
             <div className="topbar-right">
               <SearchBox onPick={goTo} />
               {role === "PATIENT" && <NotificationBell onViewAll={() => navigate("notifications")} />}
+              <LanguageSwitcher />
               <ThemeToggle round />
               <div className="usercard">
                 <span className="avatar" aria-hidden="true">{initials(user.name)}</span>
-                <span><strong>{user.name}</strong><small>{ROLE_TEXT[role]}</small></span>
+                <span><strong>{user.name}</strong><small>{t(ROLE_TEXT[role])}</small></span>
               </div>
             </div>
           </header>
