@@ -1718,3 +1718,95 @@ test("pharmacy stock calendar: own pharmacy only, in-stock live batches expiring
     assert.equal((await call("GET", url(p1, range))).status, 401);
     assert.equal((await call("GET", url(p1, "from=2026-01-01&to=2026-06-01"), { as: "staff1" })).status, 400);
 });
+
+// ---------------------------------------------------------------------------------------------
+// Refill requests: patient asks, the prescribing doctor approves (new prescription) or declines.
+// ---------------------------------------------------------------------------------------------
+test("refills: eligibility window, request, approve creates a new prescription, decline, cancel; ownership and roles hold", async () => {
+    await require("../src/middleware/rateLimit").resetAllRateLimits();
+    await throttle.resetAllThrottles();
+    assert.equal((await mailReg("refill.patient@medsync.dev")).status, 201);
+    await pool.query("UPDATE users SET email_verified_at = NOW() WHERE email = 'refill.patient@medsync.dev'");
+    const l = await call("POST", "/api/auth/login", { body: { email: "refill.patient@medsync.dev", password: "Strong@123" } });
+    tokens.refpat = l.json.data.token;
+    const [[{ patient_id: patientId }]] = await pool.query("SELECT patient_id FROM patients p JOIN users u ON u.user_id = p.user_id WHERE u.email = 'refill.patient@medsync.dev'");
+    const rx = await call("POST", "/api/prescriptions", { as: "doc", body: rxBody(patientId) });
+    assert.equal(rx.status, 201);
+    const id1 = rx.json.data.prescription_id;
+    const post = (path, as, body) => call("POST", `/api/refills${path}`, { as, body });
+
+    // what can be refilled
+    const el = await call("GET", "/api/refills/eligible", { as: "refpat" });
+    assert.equal(el.status, 200);
+    assert.deepEqual(el.json.data.map((p) => p.prescription_id), [id1]);
+    assert.equal(el.json.data[0].has_open, false);
+    assert.ok(el.json.data[0].medicines.length > 0 && el.json.data[0].doctor_name);
+    assert.equal((await call("GET", "/api/refills/eligible", { as: "doc" })).status, 403);
+    assert.equal((await call("GET", "/api/refills/eligible")).status, 401);
+
+    // validation, ownership, window
+    assert.equal((await post("", "refpat", {})).status, 400);
+    assert.equal((await post("", "pat2", { prescription_id: id1 })).status, 404, "someone else's prescription looks like it does not exist");
+    await pool.query("UPDATE prescription_items SET end_date = DATE_ADD(end_date, INTERVAL 60 DAY) WHERE prescription_id = ?", [id1]);
+    assert.equal((await post("", "refpat", { prescription_id: id1 })).status, 409, "too early: the course has weeks left");
+    await pool.query("UPDATE prescription_items SET end_date = DATE_SUB(end_date, INTERVAL 60 DAY) WHERE prescription_id = ?", [id1]);
+
+    // request, once
+    const req = await post("", "refpat", { prescription_id: id1, note: "Running low" });
+    assert.equal(req.status, 201, JSON.stringify(req.json));
+    const rf = req.json.data;
+    assert.equal(rf.status, "REQUESTED");
+    assert.equal(rf.note, "Running low");
+    assert.ok(rf.patient_name && rf.doctor_name && rf.medicines);
+    assert.equal((await post("", "refpat", { prescription_id: id1 })).status, 409, "one open request per prescription");
+    assert.equal((await call("GET", "/api/refills/eligible", { as: "refpat" })).json.data[0].has_open, true);
+
+    // who sees it
+    const docOpen = await call("GET", "/api/refills?status=REQUESTED", { as: "doc" });
+    assert.ok(docOpen.json.data.some((x) => x.refill_id === rf.refill_id));
+    assert.ok(!(await call("GET", "/api/refills", { as: "doc2" })).json.data.some((x) => x.refill_id === rf.refill_id), "another doctor never sees it");
+    assert.equal((await call("GET", "/api/refills?status=NOPE", { as: "doc" })).status, 400);
+    assert.equal((await post(`/${rf.refill_id}/approve`, "doc2", {})).status, 404);
+    assert.equal((await post(`/${rf.refill_id}/approve`, "refpat", {})).status, 403, "patients cannot approve");
+    assert.equal((await post(`/${rf.refill_id}/decline`, "doc", {})).status, 400, "declining needs a reason");
+
+    // approve: a NEW prescription with the same medicines, starting today, with reminders
+    const ap = await post(`/${rf.refill_id}/approve`, "doc", { note: "Take as before" });
+    assert.equal(ap.status, 200, JSON.stringify(ap.json));
+    assert.equal(ap.json.data.status, "APPROVED");
+    const newId = ap.json.data.new_prescription_id;
+    assert.ok(newId && newId !== id1);
+    const [[np]] = await pool.query("SELECT patient_id, notes FROM prescriptions WHERE prescription_id = ?", [newId]);
+    assert.equal(np.patient_id, patientId);
+    assert.match(np.notes, /Refill of prescription #/);
+    const items = async (id) => (await pool.query("SELECT medicine_id, dosage, frequency_per_day, DATE_FORMAT(start_date, '%Y-%m-%d') AS s FROM prescription_items WHERE prescription_id = ? ORDER BY medicine_id", [id]))[0];
+    const oldItems = await items(id1), newItems = await items(newId);
+    assert.deepEqual(newItems.map((i) => [i.medicine_id, i.dosage, i.frequency_per_day]), oldItems.map((i) => [i.medicine_id, i.dosage, i.frequency_per_day]));
+    assert.ok(newItems.every((i) => i.s === inDays(0)), "the refill starts today");
+    const [[{ n }]] = await pool.query("SELECT COUNT(*) AS n FROM reminders r JOIN prescription_items i ON i.prescription_item_id = r.prescription_item_id WHERE i.prescription_id = ?", [newId]);
+    assert.ok(n > 0, "reminders were scheduled for the new prescription");
+    assert.equal((await post(`/${rf.refill_id}/approve`, "doc", {})).status, 409, "cannot approve twice");
+    assert.equal((await post(`/${rf.refill_id}/cancel`, "refpat")).status, 409, "an answered request cannot be cancelled");
+
+    // decline path
+    const r2 = (await post("", "refpat", { prescription_id: id1 })).json.data;
+    const dec = await post(`/${r2.refill_id}/decline`, "doc", { note: "Please book a visit first" });
+    assert.equal(dec.status, 200);
+    assert.equal(dec.json.data.status, "DECLINED");
+    assert.equal(dec.json.data.doctor_note, "Please book a visit first");
+
+    // cancel path
+    const r3 = (await post("", "refpat", { prescription_id: id1 })).json.data;
+    assert.equal((await post(`/${r3.refill_id}/cancel`, "doc")).status, 403, "doctors cannot cancel for the patient");
+    const can = await post(`/${r3.refill_id}/cancel`, "refpat");
+    assert.equal(can.status, 200);
+    assert.equal(can.json.data.status, "CANCELLED");
+    assert.equal((await post(`/${r3.refill_id}/cancel`, "refpat")).status, 409);
+
+    // the patient's history and the audit trail
+    const mine = (await call("GET", "/api/refills", { as: "refpat" })).json.data;
+    assert.deepEqual(mine.map((x) => x.status).sort(), ["APPROVED", "CANCELLED", "DECLINED"]);
+    assert.equal(mine.find((x) => x.status === "APPROVED").new_prescription_id, newId);
+    const [[{ audits }]] = await pool.query("SELECT COUNT(*) AS audits FROM audit_logs WHERE action IN ('REFILL_REQUEST', 'REFILL_APPROVE', 'REFILL_DECLINE', 'REFILL_CANCEL')");
+    assert.ok(audits >= 6, "every step is audited");
+});

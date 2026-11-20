@@ -12,7 +12,7 @@ export function Panel({ title, children }) {
 
 export function List({ rows, render, empty = "Nothing to show yet." }) {
   if (!rows.length) return <p className="muted">{empty}</p>;
-  return <div className="list">{rows.map((r, i) => <div className="row" key={r.prescription_id || r.reminder_id || r.patient_id || r.batch_id || r.medicine_id || i}>{render(r)}</div>)}</div>;
+  return <div className="list">{rows.map((r, i) => <div className="row" key={r.refill_id || r.prescription_id || r.reminder_id || r.patient_id || r.batch_id || r.medicine_id || i}>{render(r)}</div>)}</div>;
 }
 
 export function Field({ label, children }) {

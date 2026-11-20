@@ -8,12 +8,13 @@ import Appointments from "../components/Appointments";
 import CareCalendar from "../components/CareCalendar";
 import { PatientOverview } from "../components/Overview";
 import { pickTab } from "../router";
+import { PatientRefills } from "../components/Refills";
 
 const hhmm = (s) => s.slice(11, 16);
 const day = (s) => s.slice(0, 10);
 const prettyDay = (d) => new Date(`${d}T00:00:00`).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
 
-const TAB_KEYS = ["overview", "today", "calendar", "rx", "appts", "notifications"];
+const TAB_KEYS = ["overview", "today", "calendar", "rx", "refills", "appts", "notifications"];
 
 // The open tab comes from the address bar (see router.js), so links, Back and reload work.
 export default function Patient({ tab: shownTab, setTab }) {
@@ -21,11 +22,11 @@ export default function Patient({ tab: shownTab, setTab }) {
   return (
     <>
       <nav className="tabs" role="tablist">
-        {[["overview", "Overview"], ["today", "Today & reminders"], ["calendar", "Calendar"], ["rx", "My prescriptions"], ["appts", "Appointments"], ["notifications", "Notifications"]].map(([k, l]) => (
+        {[["overview", "Overview"], ["today", "Today & reminders"], ["calendar", "Calendar"], ["rx", "My prescriptions"], ["refills", "Refills"], ["appts", "Appointments"], ["notifications", "Notifications"]].map(([k, l]) => (
           <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? "" : "secondary"} onClick={() => setTab(k)}>{l}</button>
         ))}
       </nav>
-      {tab === "overview" ? <PatientOverview go={setTab} /> : tab === "today" ? <Reminders /> : tab === "calendar" ? <CareCalendar /> : tab === "rx" ? <Prescriptions /> : tab === "appts" ? <Appointments role="PATIENT" /> : <NotificationList />}
+      {tab === "overview" ? <PatientOverview go={setTab} /> : tab === "today" ? <Reminders /> : tab === "calendar" ? <CareCalendar /> : tab === "rx" ? <Prescriptions /> : tab === "refills" ? <PatientRefills /> : tab === "appts" ? <Appointments role="PATIENT" /> : <NotificationList />}
     </>
   );
 }

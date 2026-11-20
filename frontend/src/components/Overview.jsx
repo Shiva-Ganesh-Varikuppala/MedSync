@@ -30,6 +30,7 @@ const ICON = {
   alert: "M12 9v4M12 17h.01M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z",
   box: "M21 8l-9-5-9 5v8l9 5 9-5zM3 8l9 5 9-5M12 13v8",
   inbox: "M22 12h-6l-2 3h-4l-2-3H2M5.5 5.1L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.9a2 2 0 0 0-1.8-1.1H7.3a2 2 0 0 0-1.8 1.1z",
+  refresh: "M23 4v6h-6M1 20v-6h6M3.5 9a9 9 0 0 1 14.9-3.4L23 10M1 14l4.6 4.4A9 9 0 0 0 20.5 15",
   users: "M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM23 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8",
 };
 
@@ -90,6 +91,7 @@ export function PatientOverview({ go }) {
     rem: call("/patients/me/reminders").then((r) => r.data),
     appts: call("/appointments?when=upcoming&limit=20").then((r) => r.data),
     rx: call("/patients/me/prescriptions/active").then((r) => r.data),
+    refill: call("/refills/eligible").then((r) => r.data),
   }));
   const now = new Date();
   const nextDose = (rem) => rem.filter((r) => r.status === "PENDING" && at(r.scheduled_at) >= now).sort((a, b) => at(a.scheduled_at) - at(b.scheduled_at))[0];
@@ -107,6 +109,9 @@ export function PatientOverview({ go }) {
         hint={g.hintOf("appts", (rows) => { const a = nextAppt(rows); return a ? `${a.doctor_name} · ${a.status === "CONFIRMED" ? "Confirmed" : "Waiting for the doctor"}` : "Nothing booked"; })} />
       <Glance tone="yellow" icon="file" onClick={() => go("rx")}
         value={g.read("rx", (rows) => rows.length)} label="Active prescriptions" hint={g.hintOf("rx", (rows) => (rows.length ? "Tap to see the details" : "No active prescriptions"))} />
+      <Glance tone="green" icon="refresh" onClick={() => go("refills")}
+        value={g.read("refill", (rows) => rows.filter((p) => !p.has_open).length)} label="Ready to refill"
+        hint={g.hintOf("refill", (rows) => (rows.some((p) => !p.has_open) ? "Courses ending soon" : rows.length ? "Request already sent" : "Nothing to refill right now"))} />
     </Frame>
   );
 }
@@ -117,6 +122,7 @@ export function DoctorOverview({ go }) {
     appts: call("/appointments?when=upcoming&limit=50").then((r) => r.data),
     mine: call("/doctors/me/prescriptions").then((r) => r.data),
     sched: call(`/doctors/me/calendar?from=${today}&to=${weekEnd}`).then((r) => r.data),
+    refills: call("/refills?status=REQUESTED&limit=50").then((r) => r.data),
   }), [today]);
   const live = (rows) => rows.filter((a) => ["REQUESTED", "CONFIRMED"].includes(a.status));
   const todays = (rows) => live(rows).filter((a) => a.scheduled_at.slice(0, 10) === today).sort((a, b) => a.scheduled_at.localeCompare(b.scheduled_at));
@@ -135,6 +141,9 @@ export function DoctorOverview({ go }) {
       <Glance tone="blue" icon="users" onClick={() => go("schedule")}
         value={g.read("sched", (d) => d.followups.length)} label="Courses ending this week"
         hint={g.hintOf("sched", (d) => (d.followups.length ? "Consider a follow-up" : "No follow-ups due"))} />
+      <Glance tone="green" icon="refresh" attention={!!g.raw("refills") && g.raw("refills").length > 0} onClick={() => go("refills")}
+        value={g.read("refills", (rows) => rows.length)} label="Refill requests"
+        hint={g.hintOf("refills", (rows) => (rows.length ? "Approve or decline them" : "No refill requests"))} />
     </Frame>
   );
 }

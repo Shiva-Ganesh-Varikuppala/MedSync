@@ -10,6 +10,7 @@ import DoctorCalendar from "../components/DoctorCalendar";
 import { confirmDialog } from "../components/Dialog";
 import { DoctorOverview } from "../components/Overview";
 import { pickTab } from "../router";
+import { DoctorRefills } from "../components/Refills";
 
 const FREQUENCIES = [[1, "Once daily"], [2, "Twice daily"], [3, "Three times daily"], [4, "Four times daily"]];
 // Count of prescriptions per month for the last six months, oldest first.
@@ -23,7 +24,7 @@ const today = () => new Date().toISOString().slice(0, 10);
 const addDays = (d, n) => { const x = new Date(`${d}T00:00:00Z`); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
 const newItem = (m) => ({ key: Math.random(), medicine_id: m.medicine_id, label: `${m.name} ${m.strength || ""}`.trim(), dosage: "", frequency_per_day: 1, start_date: today(), end_date: addDays(today(), 6) });
 
-const TAB_KEYS = ["overview", "patients", "new", "mine", "appts", "schedule"];
+const TAB_KEYS = ["overview", "patients", "new", "mine", "refills", "appts", "schedule"];
 
 // The open tab comes from the address bar (see router.js).
 export default function Doctor({ tab: shownTab, setTab }) {
@@ -34,7 +35,7 @@ export default function Doctor({ tab: shownTab, setTab }) {
   return (
     <>
       <nav className="tabs" role="tablist">
-        {[["overview", "Overview"], ["patients", "Patients"], ["new", "New prescription"], ["mine", "My prescriptions"], ["appts", "Appointments"], ["schedule", "Schedule"]].map(([k, label]) => (
+        {[["overview", "Overview"], ["patients", "Patients"], ["new", "New prescription"], ["mine", "My prescriptions"], ["refills", "Refills"], ["appts", "Appointments"], ["schedule", "Schedule"]].map(([k, label]) => (
           <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? "" : "secondary"} onClick={() => { setTab(k); setFlash({}); }}>{label}</button>
         ))}
       </nav>
@@ -44,6 +45,7 @@ export default function Doctor({ tab: shownTab, setTab }) {
       {tab === "patients" && <Patients patient={patient} choose={(p) => { setPatient(p); }} startRx={() => setTab("new")} />}
       {tab === "new" && <NewPrescription patient={patient} goPatients={() => setTab("patients")} done={(msg) => { setFlash({ success: msg }); setTab("mine"); }} />}
       {tab === "mine" && <Mine setFlash={setFlash} />}
+      {tab === "refills" && <DoctorRefills />}
       {tab === "appts" && <Appointments role="DOCTOR" />}
       {tab === "schedule" && <DoctorCalendar />}
     </>

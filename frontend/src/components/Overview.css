@@ -17,6 +17,7 @@ button.glance:active:not(:disabled) { transform: translateY(0); }
 .g-orange .glance-icon { background: linear-gradient(145deg, #ffa56a, #fb7b3a); }
 .g-yellow .glance-icon { background: linear-gradient(145deg, #ffd86b, #ffb52e); }
 .g-red .glance-icon { background: linear-gradient(145deg, #ff8f8f, #e5484d); }
+.g-green .glance-icon { background: linear-gradient(145deg, #7ce8bb, #2fb67c); }
 .g-blue .glance-icon { background: linear-gradient(145deg, #7fd9f5, #1ea7d8); }
 .glance-value { font-family: var(--display); font-weight: 800; font-size: 1.9rem; line-height: 1.1; letter-spacing: -0.03em; }
 .glance-label { font-weight: 700; }

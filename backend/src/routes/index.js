@@ -15,6 +15,7 @@ const appointmentRoutes = require("./appointmentRoutes");
 const attachmentRoutes = require("./attachmentRoutes");
 const templateRoutes = require("./templateRoutes");
 const exportRoutes = require("./exportRoutes");
+const refillRoutes = require("./refillRoutes");
 
 const router = express.Router();
 router.use("/health", healthRoutes);
@@ -33,5 +34,6 @@ router.use("/appointments", appointmentRoutes);
 router.use("/attachments", attachmentRoutes);
 router.use("/templates", templateRoutes);
 router.use("/export", exportRoutes);
+router.use("/refills", refillRoutes);
 
 module.exports = router;
