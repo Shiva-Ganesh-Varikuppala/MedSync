@@ -6,8 +6,9 @@ import { downloadFile } from "../components/download";
 import AshBurstButton from "../components/AshBurstButton";
 import { confirmDialog, promptDialog } from "../components/Dialog";
 import { pickTab } from "../router";
+import AuditLog from "../components/AuditLog";
 
-const TABS = [["users", "Users"], ["create", "Create account"], ["pharmacy", "New pharmacy"], ["analytics", "Analytics"], ["reports", "Reports"], ["automation", "Automation"]];
+const TABS = [["users", "Users"], ["create", "Create account"], ["pharmacy", "New pharmacy"], ["analytics", "Analytics"], ["reports", "Reports"], ["audit", "Audit log"], ["automation", "Automation"]];
 const ROLE_TEXT = { DOCTOR: "Doctor", PATIENT: "Patient", PHARMACY_STAFF: "Pharmacy staff", ADMIN: "Admin" };
 
 // The open tab comes from the address bar (see router.js).
@@ -26,6 +27,7 @@ export default function Admin({ tab: shownTab, setTab }) {
       {tab === "create" && <CreateAccount done={(m) => { setFlash({ success: m }); setTab("users"); }} />}
       {tab === "analytics" && <Analytics />}
       {tab === "reports" && <Reports />}
+      {tab === "audit" && <AuditLog />}
       {tab === "automation" && <Automation />}
       {tab === "pharmacy" && <NewPharmacy done={(m) => { setFlash({ success: m }); setTab("create"); }} />}
     </>

@@ -1,0 +1,21 @@
+.audit-filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; margin: 8px 0; }
+.audit-filters > input, .audit-filters > select { width: auto; flex: 1 1 200px; min-width: 0; max-width: 100%; margin: 0; }
+.audit-filters > input.filter { flex: 2 1 260px; }
+.audit-filters label { display: flex; flex-direction: column; font-size: 0.8rem; gap: 2px; flex: 0 1 auto; }
+.audit-filters label input { width: auto; margin: 0; }
+.audit-wrap { overflow-x: auto; margin: 10px 0; }
+.audit-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+.audit-table th { text-align: left; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted, inherit); padding: 6px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.audit-table td { padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.audit-table td small { display: block; opacity: 0.7; }
+.audit-table td .badge { margin-left: 6px; }
+.audit-table tbody tr:hover { background: var(--tint); }
+.audit-action { font-weight: 600; text-transform: capitalize; }
+
+@media (max-width: 640px) {
+  .audit-table thead { display: none; }
+  .audit-table, .audit-table tbody, .audit-table tr, .audit-table td { display: block; width: 100%; }
+  .audit-table tr { border: 1px solid var(--line); border-radius: 10px; margin-bottom: 10px; padding: 6px 4px; }
+  .audit-table td { border: 0; padding: 3px 10px; }
+  .audit-table td::before { content: attr(data-label) ": "; font-size: 0.75rem; opacity: 0.65; }
+}

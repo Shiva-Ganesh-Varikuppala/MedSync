@@ -2,7 +2,7 @@ const bcrypt = require("bcryptjs");
 const pool = require("../config/database");
 const { badRequest, forbidden, notFound } = require("../utils/httpError");
 const { writeAudit } = require("../utils/audit");
-const { toEnum, toInt, toText, pagination, likeEscape } = require("../utils/validate");
+const { toEnum, toInt, toText, toDate, pagination, likeEscape } = require("../utils/validate");
 const { withTransaction } = require("../utils/transaction");
 const { checkEmail, checkPassword } = require("./authService");
 const blobStore = require("./blobStore");
@@ -149,10 +149,44 @@ async function createPharmacy(admin, input, ip) {
     return { pharmacy_id: r.insertId, ...p };
 }
 
+// Search the audit log: who did what, when. Newest first, paged. The free-text "details" are left out on purpose
+// (same rule as the CSV export): they can hold clinical wording an account administrator does not need.
+async function listAudit(query) {
+    const { limit, offset, page } = pagination(query, { defaultLimit: 50, maxLimit: 200 });
+    const where = []; const params = [];
+    const from = toDate(query.from, "from", { required: false });
+    const to = toDate(query.to, "to", { required: false });
+    if (from && to && from > to) throw badRequest("from cannot be after to");
+    if (from) { where.push("a.created_at >= ?"); params.push(from); }
+    if (to) { where.push("a.created_at < DATE_ADD(?, INTERVAL 1 DAY)"); params.push(to); }
+    if (query.action) { where.push("a.action = ?"); params.push(toText(query.action, "action", { max: 60 })); }
+    if (query.entity_type) { where.push("a.entity_type = ?"); params.push(toText(query.entity_type, "entity_type", { max: 60 })); }
+    if (query.user_id) { where.push("a.user_id = ?"); params.push(toInt(query.user_id, "user_id")); }
+    if (query.q) {
+        const t = `%${likeEscape(toText(query.q, "q", { max: 100 }))}%`;
+        where.push("(u.name LIKE ? OR u.email LIKE ? OR a.ip_address LIKE ?)");
+        params.push(t, t, t);
+    }
+    const clause = where.length ? `WHERE ${where.join(" AND ")}` : "";
+    const [rows] = await pool.query(
+        `SELECT a.audit_id, a.created_at, a.user_id, u.name AS user_name, u.email AS user_email, u.role AS user_role,
+                a.action, a.entity_type, a.entity_id, a.ip_address
+           FROM audit_logs a LEFT JOIN users u ON u.user_id = a.user_id
+           ${clause} ORDER BY a.audit_id DESC LIMIT ? OFFSET ?`, [...params, limit + 1, offset]);
+    return { items: rows.slice(0, limit), page, limit, has_more: rows.length > limit };
+}
+
+// The values the Audit tab offers in its drop-downs.
+async function auditFacets() {
+    const [actions] = await pool.query("SELECT DISTINCT action FROM audit_logs ORDER BY action LIMIT 500");
+    const [types] = await pool.query("SELECT DISTINCT entity_type FROM audit_logs WHERE entity_type IS NOT NULL ORDER BY entity_type LIMIT 200");
+    return { actions: actions.map((r) => r.action), entity_types: types.map((r) => r.entity_type) };
+}
+
 async function summary() {
     const [[counts]] = await pool.query("SELECT SUM(role='DOCTOR') AS doctors, SUM(role='PATIENT') AS patients, SUM(role='PHARMACY_STAFF') AS pharmacy_staff, SUM(is_active=0) AS deactivated FROM users");
     const [[p]] = await pool.query("SELECT COUNT(*) AS pharmacies FROM pharmacies");
     return { doctors: Number(counts.doctors), patients: Number(counts.patients), pharmacy_staff: Number(counts.pharmacy_staff), deactivated: Number(counts.deactivated), pharmacies: p.pharmacies };
 }
 
-module.exports = { createPharmacy, createUser, deleteUser, listUsers, resetPassword, setActive, summary };
+module.exports = { auditFacets, createPharmacy, createUser, deleteUser, listAudit, listUsers, resetPassword, setActive, summary };

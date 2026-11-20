@@ -13,6 +13,8 @@ router.use(authenticate, requireRole("ADMIN"));
 
 router.get("/summary", asyncHandler(c.summary));
 router.get("/analytics", asyncHandler(async (req, res) => res.json({ success: true, message: "Analytics", data: await analytics.overview() })));
+router.get("/audit", asyncHandler(c.listAudit));
+router.get("/audit/facets", asyncHandler(c.auditFacets));
 router.get("/users", asyncHandler(c.listUsers));
 router.post("/users", asyncHandler(c.createUser));
 router.patch("/users/:userId/active", asyncHandler(c.setActive));

@@ -1810,3 +1810,46 @@ test("refills: eligibility window, request, approve creates a new prescription, 
     const [[{ audits }]] = await pool.query("SELECT COUNT(*) AS audits FROM audit_logs WHERE action IN ('REFILL_REQUEST', 'REFILL_APPROVE', 'REFILL_DECLINE', 'REFILL_CANCEL')");
     assert.ok(audits >= 6, "every step is audited");
 });
+
+test("audit log viewer: admin only, filters, paging, no free-text details", async () => {
+    const [[adm]] = await pool.query("SELECT email FROM users WHERE role = 'ADMIN' LIMIT 1");
+    await login("auditadmin", adm.email);
+    // anonymous and non-admin callers are turned away
+    assert.equal((await call("GET", "/api/admin/audit")).status, 401);
+    for (const who of ["doc", "pat1", "staff1"]) {
+        assert.equal((await call("GET", "/api/admin/audit", { as: who })).status, 403, who);
+        assert.equal((await call("GET", "/api/admin/audit/facets", { as: who })).status, 403, who);
+    }
+    // newest first, and no details column ever leaves the server
+    const all = await call("GET", "/api/admin/audit?limit=5", { as: "auditadmin" });
+    assert.equal(all.status, 200, JSON.stringify(all.json));
+    const items = all.json.data.items;
+    assert.ok(items.length > 0 && items.length <= 5);
+    assert.ok(items.every((r, i) => i === 0 || r.audit_id < items[i - 1].audit_id), "newest first");
+    assert.ok(items.every((r) => !("details" in r)), "free-text details are not returned");
+    // paging
+    const p2r = await call("GET", "/api/admin/audit?limit=2&page=2", { as: "auditadmin" });
+    assert.equal(p2r.json.data.page, 2);
+    assert.ok(p2r.json.data.items.every((r) => !items.slice(0, 2).some((x) => x.audit_id === r.audit_id)) || items.length < 3);
+    // filters
+    const logins = await call("GET", "/api/admin/audit?action=LOGIN&limit=200", { as: "auditadmin" });
+    assert.ok(logins.json.data.items.length >= 1 && logins.json.data.items.every((r) => r.action === "LOGIN"));
+    const byName = await call("GET", "/api/admin/audit?q=ananya&limit=200", { as: "auditadmin" });
+    assert.ok(byName.json.data.items.length >= 1 && byName.json.data.items.every((r) => /ananya/i.test(`${r.user_name} ${r.user_email} ${r.ip_address}`)));
+    const wild = await call("GET", "/api/admin/audit?q=%25&limit=200", { as: "auditadmin" });
+    assert.equal(wild.status, 200);
+    assert.equal(wild.json.data.items.length, 0, "a % in the search is a literal character, not a wildcard");
+    const today = inDays(0);
+    assert.ok((await call("GET", `/api/admin/audit?from=${today}&to=${today}&limit=5`, { as: "auditadmin" })).json.data.items.length >= 1);
+    assert.equal((await call("GET", `/api/admin/audit?from=${inDays(-400)}&to=${inDays(-399)}`, { as: "auditadmin" })).json.data.items.length, 0);
+    // validation
+    assert.equal((await call("GET", "/api/admin/audit?from=nope", { as: "auditadmin" })).status, 400);
+    assert.equal((await call("GET", `/api/admin/audit?from=${inDays(1)}&to=${inDays(0)}`, { as: "auditadmin" })).status, 400);
+    assert.equal((await call("GET", "/api/admin/audit?user_id=abc", { as: "auditadmin" })).status, 400);
+    assert.equal((await call("GET", "/api/admin/audit?limit=9999", { as: "auditadmin" })).status, 400);
+    // injection attempt is just text
+    assert.equal((await call("GET", "/api/admin/audit?action=' OR 1=1 --", { as: "auditadmin" })).json.data.items.length, 0);
+    // facets
+    const f = (await call("GET", "/api/admin/audit/facets", { as: "auditadmin" })).json.data;
+    assert.ok(f.actions.includes("LOGIN") && Array.isArray(f.entity_types));
+});

@@ -3,6 +3,8 @@ const ok = (res, message, data, status = 200) => res.status(status).json({ succe
 module.exports = {
     summary: async (req, res) => ok(res, "Summary retrieved successfully", await service.summary()),
     listUsers: async (req, res) => ok(res, "Users retrieved successfully", await service.listUsers(req.query)),
+    listAudit: async (req, res) => ok(res, "Audit log retrieved successfully", await service.listAudit(req.query)),
+    auditFacets: async (req, res) => ok(res, "Audit filters retrieved successfully", await service.auditFacets()),
     createUser: async (req, res) => ok(res, "User created successfully", await service.createUser(req.user, req.body || {}, req.ip), 201),
     setActive: async (req, res) => ok(res, "User updated successfully", await service.setActive(req.user, req.params.userId, (req.body || {}).is_active, req.ip)),
     deleteUser: async (req, res) => ok(res, "User deleted permanently", await service.deleteUser(req.user, req.params.userId, (req.body || {}).confirm_email, req.ip)),
