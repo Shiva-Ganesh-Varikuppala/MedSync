@@ -6,6 +6,7 @@ import Brand from "../components/Brand";
 import ThemeToggle from "../components/ThemeToggle";
 import ResendVerification from "../components/ResendVerification";
 import { LanguageSwitcher, useI18n } from "../i18n";
+import "./Login.css";
 
 // Public sign-up is for patients only. Doctor and pharmacy accounts are created by an administrator.
 export default function Login() {
@@ -44,6 +45,7 @@ export default function Login() {
 
   return (
     <main className="auth">
+      <div className="auth-bg" aria-hidden="true"><span className="b1" /><span className="b2" /><span className="b3" /></div>
       <ThemeToggle floating />
       <div className="lang-fab"><LanguageSwitcher /></div>
       <section className="hero">
@@ -53,7 +55,11 @@ export default function Login() {
         <ul className="chips" aria-label="What MedSync does">
           <li><b>⌁</b> {t("Prescriptions")}</li><li><b>◷</b> {t("Smart reminders")}</li><li><b>✓</b> {t("Drug safety")}</li><li><b>+</b> {t("Pharmacy management")}</li>
         </ul>
-        <div className="capsule-art" aria-hidden="true" onMouseMove={tiltCapsule} onMouseLeave={(e)=>{e.currentTarget.style.setProperty("--tilt-x","0deg");e.currentTarget.style.setProperty("--tilt-y","0deg");}}><i className="orbit"/><i className="cap"><b /></i><i className="dot d1">+</i><i className="dot d2">♥</i><i className="dot d3">✓</i></div>
+        <div className="capsule-art" aria-hidden="true" onMouseMove={tiltCapsule} onMouseLeave={(e)=>{e.currentTarget.style.setProperty("--tilt-x","0deg");e.currentTarget.style.setProperty("--tilt-y","0deg");}}><i className="orbit"/><i className="cap"><b /></i><i className="dot d1">+</i><i className="dot d2">♥</i><i className="dot d3">✓</i>
+          <div className="float-card fc1"><i>✓</i><span><strong>Metformin 500 mg</strong><small>08:00 · {t("Taken")}</small></span></div>
+          <div className="float-card fc2"><i>⛨</i><span><strong>{t("Interaction check")}</strong><small>{t("No conflicts found")}</small></span></div>
+          <div className="float-card fc3"><i>↻</i><span><strong>{t("Refill approved")}</strong><small>{t("Renewed in one tap")}</small></span></div>
+        </div>
       </section>
       {pending ? (
         <section className="card form" aria-live="polite">
@@ -75,7 +81,7 @@ export default function Login() {
             <label>{t("Date of birth")}<input name="date_of_birth" type="date" required onChange={change} /></label>
           </>
         )}
-        <label>{t("Email")}<input name="email" type="email" autoComplete="username" required onChange={change} /></label>
+        <label>{t("Email")}<input name="email" type="email" autoComplete="username" placeholder="you@example.com" required onChange={change} /></label>
         <label>{t("Password")}<span className="password-field"><input name="password" type={revealPassword ? "text" : "password"} autoComplete={register ? "new-password" : "current-password"} required minLength={register ? 8 : undefined} onChange={change} /><button type="button" className="reveal" aria-label={revealPassword ? t("Hide password") : t("Show password")} onClick={()=>setRevealPassword(!revealPassword)}>{revealPassword ? t("Hide") : t("Show")}</button></span></label>
         {register && <p className="muted small">{t("At least 8 characters, with a letter and a number.")}</p>}
         <button disabled={loading}>{loading ? t("Working…") : register ? t("Register") : t("Sign in")}</button>

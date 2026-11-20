@@ -1,0 +1,122 @@
+/* Sign-in page polish. Loaded after styles.css, so these rules refine the base .auth styles. */
+
+/* ── Animated aurora background ─────────────────────────── */
+.auth-bg { position: fixed; inset: 0; z-index: -2; overflow: hidden; pointer-events: none; }
+.auth-bg span { position: absolute; border-radius: 50%; filter: blur(70px); opacity: 0.55; will-change: transform; }
+.auth-bg .b1 { width: 46vmax; height: 46vmax; left: -14vmax; top: -18vmax; background: radial-gradient(circle, #8a6cf7, transparent 68%); animation: auroraA 22s ease-in-out infinite alternate; }
+.auth-bg .b2 { width: 38vmax; height: 38vmax; right: -12vmax; bottom: -16vmax; background: radial-gradient(circle, #ff8a4c, transparent 68%); opacity: 0.38; animation: auroraB 26s ease-in-out infinite alternate; }
+.auth-bg .b3 { width: 30vmax; height: 30vmax; left: 38%; top: 55%; background: radial-gradient(circle, #4cc9f0, transparent 70%); opacity: 0.22; animation: auroraC 30s ease-in-out infinite alternate; }
+@keyframes auroraA { to { transform: translate(9vmax, 7vmax) scale(1.12); } }
+@keyframes auroraB { to { transform: translate(-8vmax, -6vmax) scale(1.1); } }
+@keyframes auroraC { to { transform: translate(-10vmax, -8vmax) scale(0.9); } }
+:root[data-theme="dark"] .auth-bg span { opacity: 0.34; }
+:root[data-theme="dark"] .auth-bg .b2 { opacity: 0.22; }
+:root[data-theme="dark"] .auth-bg .b3 { opacity: 0.14; }
+
+/* ── Hero text ──────────────────────────────────────────── */
+.auth .hero > * { animation: loginRise 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+.auth .hero > :nth-child(2) { animation-delay: 0.08s; }
+.auth .hero > :nth-child(3) { animation-delay: 0.16s; }
+.auth .hero > :nth-child(4) { animation-delay: 0.24s; }
+.auth .hero > :nth-child(5) { animation-delay: 0.32s; }
+@keyframes loginRise { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: none; } }
+
+.auth h1 { letter-spacing: -0.035em; }
+.auth h1 em {
+  position: relative; display: inline-block; font-style: normal; padding: 0 0.04em;
+  background: linear-gradient(100deg, #7b5cf0 0%, #b56bff 45%, #ff8a4c 100%);
+  -webkit-background-clip: text; background-clip: text; color: transparent; -webkit-text-fill-color: transparent;
+}
+.auth h1 em::after {
+  content: ""; position: absolute; left: 0.04em; right: 0.04em; bottom: 0.02em; height: 0.09em; border-radius: 99px;
+  background: linear-gradient(90deg, #7b5cf0, #ff8a4c); transform-origin: left; animation: underlineGrow 0.9s 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+@keyframes underlineGrow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+:root[data-theme="dark"] .auth h1 em { color: transparent; }
+
+.auth .lead { font-size: 1.15rem; line-height: 1.6; }
+.chips li { backdrop-filter: blur(6px); }
+
+/* ── Stage: capsule plus floating feature cards ─────────── */
+.capsule-art { height: 300px; margin-top: 1.6rem; }
+.capsule-art .cap { top: 96px; }
+.capsule-art .orbit { top: 70px; }
+.capsule-art::after { top: 190px; }
+.capsule-art .d1 { top: 66px; }
+.capsule-art .d2 { top: 134px; }
+.capsule-art .d3 { top: 148px; }
+
+.float-card {
+  position: absolute; display: flex; align-items: center; gap: 0.7rem; min-width: 210px; padding: 0.7rem 0.95rem 0.7rem 0.7rem;
+  border-radius: 18px; background: color-mix(in srgb, var(--surface) 88%, transparent); border: 1px solid var(--glass-line);
+  box-shadow: 0 22px 40px -22px rgba(60, 36, 150, 0.55), 0 2px 6px rgba(30, 27, 58, 0.06); backdrop-filter: blur(12px);
+  animation: cardFloat 7s ease-in-out infinite;
+}
+.float-card i { flex-shrink: 0; width: 38px; height: 38px; border-radius: 12px; display: grid; place-items: center; font-style: normal; font-weight: 800; color: #fff; }
+.float-card strong { display: block; font-size: 0.88rem; line-height: 1.25; }
+.float-card small { display: block; font-size: 0.76rem; color: var(--ink-soft); }
+.fc1 { left: 330px; top: 8px; animation-delay: -1s; }
+.fc1 i { background: linear-gradient(145deg, #49d9a0, #17a36d); }
+.fc2 { left: 360px; top: 118px; animation-delay: -3.5s; }
+.fc2 i { background: linear-gradient(145deg, #a58bff, #6a49e6); }
+.fc3 { left: 300px; top: 222px; animation-delay: -5s; }
+.fc3 i { background: linear-gradient(145deg, #ffb066, #fb7b3a); }
+@keyframes cardFloat { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-9px); } }
+
+/* ── Sign-in card ───────────────────────────────────────── */
+.auth .card.form {
+  position: relative; padding: 2.1rem 2rem; border-radius: 30px; border: 1px solid transparent;
+  background:
+    linear-gradient(color-mix(in srgb, var(--surface) 94%, transparent), color-mix(in srgb, var(--surface) 94%, transparent)) padding-box,
+    linear-gradient(140deg, rgba(123, 92, 240, 0.75), rgba(255, 138, 76, 0.55) 55%, rgba(123, 92, 240, 0.18)) border-box;
+  box-shadow: 0 40px 80px -40px rgba(69, 44, 148, 0.55), 0 2px 8px rgba(30, 27, 58, 0.05);
+  animation: loginCard 0.8s 0.1s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+@keyframes loginCard { from { opacity: 0; transform: translateY(26px) scale(0.98); } to { opacity: 1; transform: none; } }
+.auth .card.form::before {
+  content: ""; position: absolute; left: 2rem; top: -1px; width: 64px; height: 4px; border-radius: 0 0 6px 6px;
+  background: linear-gradient(90deg, #7b5cf0, #ff8a4c);
+}
+.auth .card.form h2 { font-size: 1.65rem; letter-spacing: -0.03em; }
+.auth .login-subtitle { margin: -0.5rem 0 0.8rem; font-size: 1rem; }
+
+.auth .card.form label { font-size: 0.82rem; letter-spacing: 0.02em; color: var(--ink-soft); }
+.auth .card.form input {
+  padding: 0.85rem 1rem; border-radius: 16px; font-size: 1rem; color: var(--ink);
+  background: color-mix(in srgb, var(--field) 92%, transparent); border-width: 1.5px;
+}
+.auth .card.form input:focus { border-color: var(--indigo); box-shadow: 0 0 0 4px rgba(123, 92, 240, 0.18); outline: none; }
+.auth .card.form .password-field input { padding-right: 4.6rem; }
+.auth .card.form .reveal { font-weight: 700; border-radius: 10px; }
+.auth .card.form .reveal:hover:not(:disabled) { background: var(--tint); transform: translateY(-50%); box-shadow: none; }
+
+.auth .card.form > button[type="submit"] {
+  position: relative; overflow: hidden; padding: 0.95rem 1.2rem; font-size: 1.02rem; font-weight: 700; border-radius: 16px; margin-top: 0.3rem;
+  background: linear-gradient(135deg, #8a6cf7 0%, #6a49e6 55%, #5a38d6 100%);
+  box-shadow: 0 18px 30px -16px rgba(84, 37, 206, 0.85), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+.auth .card.form > button[type="submit"]::after {
+  content: ""; position: absolute; top: 0; bottom: 0; left: -60%; width: 45%; transform: skewX(-22deg);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.35), transparent); transition: left 0.6s ease;
+}
+.auth .card.form > button[type="submit"]:hover:not(:disabled)::after { left: 120%; }
+.auth .card.form > button[type="submit"]:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 22px 34px -16px rgba(84, 37, 206, 0.95), inset 0 1px 0 rgba(255, 255, 255, 0.3); }
+
+.auth .card.form > button.link { font-weight: 600; text-decoration: none; padding: 0.35rem 0; }
+.auth .card.form > button.link:hover:not(:disabled) { text-decoration: underline; }
+
+/* ── Language drop-down + theme button: one glassy pair ─── */
+.lang-fab { top: 1rem; right: 4.6rem; }
+.lang-fab .lang-select, .theme-fab {
+  height: 44px; backdrop-filter: blur(10px);
+  background-color: color-mix(in srgb, var(--surface) 80%, transparent);
+}
+.lang-fab .lang-select { padding: 0 2rem 0 1rem; box-shadow: var(--shadow); font-weight: 600; }
+
+@media (max-width: 760px) {
+  .auth .card.form { padding: 1.6rem 1.3rem; }
+  .auth h1 { margin-top: 1rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .auth-bg span, .float-card, .auth .hero > *, .auth .card.form, .auth h1 em::after { animation: none !important; }
+}

@@ -8,11 +8,13 @@ MedSync is a healthcare medication and prescription management application. Doct
 
 | Role | Main features |
 |---|---|
-| **Doctor** | Search patients, write prescriptions with an interaction warning (it also checks the patient's other active medicines), cancel prescriptions, see their own prescriptions, answer appointment requests (confirm, decline with a reason, reschedule, mark completed). |
-| **Patient** | Today's dose timetable (generated from the prescription), mark doses taken, skipped or late, see missed doses and adherence, view prescriptions, book and cancel appointments, read notifications. |
-| **Pharmacy staff** | Inventory with search and paging, receive stock, adjust quantities, remove batches (history is kept), low-stock and expiring alerts, **dispense prescriptions** (stock is checked and deducted in one transaction), medicine catalog. |
-| **Administrator** | Create doctor, pharmacy and admin accounts, deactivate or reactivate users, reset a password, create pharmacies, run the reminder jobs, check email and SMS delivery. |
-| **Everyone** | A search box in the top bar. It only finds what that role is allowed to see. |
+| **Doctor** | Overview dashboard, search patients, write prescriptions with an interaction warning (it also checks the patient's other active medicines) and reusable templates, cancel prescriptions, attach files, answer appointment requests (confirm, decline with a reason, reschedule, mark completed), a **Schedule** calendar of appointments and course follow-ups, and **refill requests** (approve creates a new prescription, or decline with a reason). |
+| **Patient** | Overview dashboard, today's dose timetable (generated from the prescription), mark doses taken, skipped or late, missed doses and adherence, a **care calendar** (doses and appointments, exportable as `.ics`), view prescriptions, book and cancel appointments, **request refills**, read notifications, download their own data (JSON or CSV) and a prescription as PDF. |
+| **Pharmacy staff** | Overview dashboard, inventory with search and paging, receive stock, adjust quantities, remove batches (history is kept), low-stock and expiring alerts, an **expiry calendar**, **dispense prescriptions** (stock is checked and deducted in one transaction), medicine catalog. |
+| **Administrator** | Create doctor and pharmacy-staff accounts, deactivate or reactivate users, reset a password, permanently delete an account (type its email to confirm), create pharmacies, analytics, CSV reports, an **audit log viewer** (search and filter who did what), run the reminder jobs, check email and SMS delivery. |
+| **Everyone** | A search box in the top bar (it only finds what that role is allowed to see), light and dark theme, English / Hindi / Telugu (partly translated, see `docs/LANGUAGES.md`), and addresses that match the open tab so links, Back and reload work. |
+
+Accounts sign up with email verification, and phone verification is available for SMS (see `docs/EMAIL_VERIFICATION.md`, `docs/PHONE_VERIFICATION.md`).
 
 ## Tech stack
 
@@ -21,6 +23,7 @@ MedSync is a healthcare medication and prescription management application. Doct
 - Database: MySQL 8
 - Authentication: JWT + refresh tokens, bcrypt
 - Optional delivery: SMTP email (nodemailer) and SMS (Twilio)
+- Optional file storage: Azure Blob Storage for attachments (a local folder is used when it is not set up)
 - API: REST, base path `/api`, responses shaped `{ success, message, data }`
 
 ## Project structure
@@ -29,8 +32,8 @@ MedSync is a healthcare medication and prescription management application. Doct
 MedSync/
 ├── frontend/    React app (pages, components, styles)
 ├── backend/     Express API (routes → controllers → services → MySQL)
-├── database/    schema/, seeds/, migrations/ (001 to 009)
-├── docs/        security checklist, demo script
+├── database/    schema/, seeds/, migrations/ (001 to 016)
+├── docs/        design, security, feature guides, demo script
 ├── diagrams/
 └── README.md
 ```
@@ -48,6 +51,8 @@ You need Node 20+ and MySQL 8.
    (Each migration asks for the password. If a migration says something "already exists", it was applied before and you can carry on.)
 
    Easier: after setting `backend/.env`, run `npm run db:migrate -- --seed` in `backend`. It creates the database, applies every file in order, remembers what it applied, and needs no `mysql` command-line client. If you already ran the files by hand, run `npm run db:migrate -- --baseline` once first.
+
+   Keep your database up to date: when you pull new code, run `npm run db:migrate` again. Features such as phone verification (015) and refill requests (016) need their migrations, otherwise the API returns errors like "Unknown column".
 2. **Backend.**
    ```bash
    cd backend
@@ -82,14 +87,16 @@ Public sign-up creates **patient** accounts only. Doctor, pharmacy and admin acc
 
 ```bash
 cd backend
-npm test        # 37 integration tests against a throw-away database named <DB_NAME>_test
+npm test        # integration tests against a throw-away database named <DB_NAME>_test
 ```
 
-All 37 tests pass on MySQL 8.0 in strict mode (the default on most installs) and on MariaDB. Run them on your own MySQL before submitting. If your database server and your computer use different time zones, start it with the same zone as your computer, or a few expiry-date tests can fail around midnight.
+The tests cover sign-in and roles, prescriptions and interaction checks, reminders, dispensing, appointments, calendars, refill requests, exports, the audit log viewer and more. They never send real email or SMS, even if `backend/.env` has SMTP or Twilio settings. Run them on your own MySQL 8 before submitting. If your database server and your computer use different time zones, start it with the same zone as your computer, or a few expiry-date tests can fail around midnight.
 
 ## More
 
-- `docs/AZURE_DATABASE.md`: moving the database to Azure Database for MySQL, step by step.
+- `docs/AZURE_DATABASE.md`: moving the database to Azure Database for MySQL, step by step. `docs/AZURE_BLOB_STORAGE.md`: attachment storage.
+- `docs/SYSTEM_DESIGN.md`, `docs/DATABASE_DESIGN.md`, `docs/THREAT_MODEL.md`, `docs/DATA_CLASSIFICATION.md`: design and security background.
+- Feature guides: `docs/CARE_CALENDAR.md`, `docs/REFILL_REQUESTS.md`, `docs/AUDIT_VIEWER.md`, `docs/LANGUAGES.md`.
 - `docs/SECURITY_CHECKLIST.md`: what is protected, and the known limitations.
 - `docs/DEMO_SCRIPT.md`: a step-by-step script for the final presentation.
 - `backend/README.md`: API reference.

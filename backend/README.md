@@ -3,9 +3,11 @@
 ## Run locally
 
 1. Create `backend/.env` from `.env.example`, setting the database login and a JWT secret of at least 32 characters.
-2. Apply `database/schema`, `database/seeds`, then **all** files in `database/migrations/` in order (001 to 009).
+2. Apply `database/schema`, `database/seeds`, then **all** files in `database/migrations/` in order (001 to 016), or simply run `npm run db:migrate -- --seed`. Run `npm run db:migrate` again after pulling new code.
 3. Run `npm install` and `npm run dev` (or `npm start`). The default API address is `http://localhost:5001/api`.
 4. Development only: `npm run dev:passwords` sets every seed user's password to `Test@12345`.
+
+Tip: to keep a local database apart from a cloud one, put the local settings in `.env.local` and start with `node --env-file=.env.local src/server.js`; run the tests with `node --env-file=.env.local --test test/*.test.js`.
 
 Background jobs (marking missed doses, sending due reminders) start with the server and run every minute. An administrator can also run them on demand.
 
@@ -35,9 +37,17 @@ Background jobs (marking missed doses, sending due reminders) start with the ser
 
 **Pharmacy** `/pharmacies` (role PHARMACY_STAFF, own pharmacy only): `GET /`, `GET /:id`, `GET /:id/inventory?q=&limit=&page=`, `GET /:id/low-stock`, `GET /:id/expiring`, `POST /:id/batches`, `GET /:id/prescriptions/pending`, `GET /:id/prescriptions/:rxId/stock`, `POST /:id/prescriptions/:rxId/dispense`, `GET /:id/dispensations`. **Batches** `/batches`: `PUT /:id`, `PATCH /:id/quantity`, `DELETE /:id` (soft delete, history is kept).
 
+**Calendars:** `GET /patients/me/calendar` and `GET /patients/me/calendar.ics` (patient), `GET /doctors/me/calendar?from=&to=` (appointments and course follow-ups), `GET /pharmacies/:id/stock-calendar?from=&to=` (own pharmacy; batch expiry dates). Ranges are limited to 62 days.
+
+**Refill requests** `/refills`: patient: `GET /eligible`, `POST /` (`prescription_id`, optional `note`), `POST /:id/cancel`; doctor: `POST /:id/approve` (creates a new prescription from the old one; a severe interaction needs `interaction_override_reason`), `POST /:id/decline` (needs `note`); both: `GET /?status=`. Window: 7 days before the course ends to 30 days after (`REFILL_DAYS_BEFORE_END` / `REFILL_DAYS_AFTER_END`); at most 3 open requests per patient.
+
+**Exports** `/export`: prescription PDF, a patient's own data (JSON or CSV), and administrator CSV reports (`/export/admin/users|stock|audit`). Every export is written to the audit log.
+
+Other route groups (email and phone verification, attachments, prescription templates, notifications, analytics) are documented in `docs/` and defined in `src/routes/`.
+
 **Search** `GET /api/search?q=` (2+ characters, any signed-in role): results are limited to what that role may see.
 
-**Admin** `/admin` (role ADMIN): `GET /summary`, `GET /users?q=&role=&limit=&page=`, `POST /users`, `PATCH /users/:id/active`, `POST /users/:id/password`, `POST /pharmacies`, `POST /cron/run`, `GET /delivery`, `POST /delivery/test` (`channel` is EMAIL or SMS; sends to the admin's own address or phone).
+**Admin** `/admin` (role ADMIN): `GET /summary`, `GET /analytics`, `GET /audit?q=&action=&entity_type=&user_id=&from=&to=&limit=&page=` (newest first; free-text details are never returned), `GET /audit/facets`, `GET /users?q=&role=&limit=&page=`, `POST /users` (doctor or pharmacy staff), `PATCH /users/:id/active`, `POST /users/:id/password`, `DELETE /users/:id` (needs `confirm_email`; permanent), `POST /pharmacies`, `POST /cron/run`, `GET /delivery`, `POST /delivery/test` (`channel` is EMAIL or SMS; sends to the admin's own address or phone).
 
 ## Email and SMS
 
