@@ -8,6 +8,7 @@ import StockCalendar from "../components/StockCalendar";
 import { confirmDialog } from "../components/Dialog";
 import { PharmacyOverview } from "../components/Overview";
 import { pickTab } from "../router";
+import SideTabs from "../components/SideTabs";
 
 const today = () => new Date().toISOString().slice(0, 10);
 const STATUS_TEXT = { VALID: "In date", EXPIRING_SOON: "Expiring soon", EXPIRED: "Expired" };
@@ -23,9 +24,9 @@ export default function Pharmacy({ tab: shownTab, setTab }) {
   const go = (k) => { setTab(k); setFlash({}); };
   return (
     <>
-      <nav className="tabs" role="tablist">
-        {TABS.map(([k, l]) => <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? "" : "secondary"} onClick={() => go(k)}>{l}</button>)}
-      </nav>
+      <SideTabs label="Pharmacy sections">
+        {TABS.map(([k, l]) => <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? "active" : ""} onClick={() => go(k)}>{l}</button>)}
+      </SideTabs>
       <Notice {...flash} />
       {tab === "overview" && <PharmacyOverview pid={user.pharmacy_id} go={go} />}
       {tab === "inventory" && <Inventory pid={user.pharmacy_id} setFlash={setFlash} />}

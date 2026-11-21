@@ -1,0 +1,33 @@
+/* Onboarding tour: a dimmed screen with one lit-up area and a small card that explains it. */
+.tour { position: fixed; inset: 0; z-index: 400; pointer-events: none; }
+.tour-dim { position: absolute; inset: 0; background: rgba(20, 16, 44, .5); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); pointer-events: auto; }
+.tour-spot {
+  position: absolute; border-radius: 18px; pointer-events: auto;
+  box-shadow: 0 0 0 9999px rgba(20, 16, 44, .5), 0 0 0 2px rgba(255, 255, 255, .9), 0 0 0 6px rgba(123, 92, 240, .55);
+  transition: top .25s ease, left .25s ease, width .25s ease, height .25s ease;
+}
+.tour-card {
+  position: absolute; width: 340px; max-width: calc(100vw - 32px); padding: 1.2rem 1.3rem 1.1rem; pointer-events: auto; outline: none;
+  background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 22px;
+  box-shadow: 0 30px 60px -24px rgba(30, 20, 90, .55), 0 0 0 1px rgba(255, 255, 255, .4) inset;
+  animation: tourIn .25s ease both;
+}
+.tour-card.tour-center { left: 50%; top: 50%; transform: translate(-50%, -50%); animation-name: tourInCenter; }
+.tour-card h3 { font-size: 1.2rem; margin: .1rem 0 .45rem; }
+.tour-count { margin: 0; font-size: .7rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--indigo); }
+.tour-text { margin: 0 0 1rem; color: var(--ink-soft); font-size: .93rem; line-height: 1.5; }
+.tour-dots { display: flex; gap: 6px; margin-bottom: 1rem; }
+.tour-dots i { width: 7px; height: 7px; border-radius: 99px; background: var(--line); transition: width .2s ease, background .2s ease; }
+.tour-dots i.past { background: color-mix(in srgb, var(--indigo) 45%, var(--line)); }
+.tour-dots i.on { width: 20px; background: var(--indigo); }
+.tour-actions { display: flex; justify-content: flex-end; gap: .5rem; }
+.tour-actions button { padding: .5rem 1rem; }
+.tour-actions button:first-child:not(:last-child) { margin-right: auto; }
+
+@keyframes tourIn { from { opacity: 0; translate: 0 8px; } to { opacity: 1; translate: 0 0; } }
+@keyframes tourInCenter { from { opacity: 0; transform: translate(-50%, calc(-50% + 8px)); } to { opacity: 1; transform: translate(-50%, -50%); } }
+
+@media (max-width: 700px) {
+  .tour-card, .tour-card.tour-center { left: 16px !important; right: 16px; top: auto !important; bottom: 16px; width: auto; max-width: none; transform: none; animation-name: tourIn; }
+}
+@media (prefers-reduced-motion: reduce) { .tour-card, .tour-spot { animation: none; transition: none; } }

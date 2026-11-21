@@ -10,6 +10,7 @@ import { PatientOverview } from "../components/Overview";
 import { pickTab } from "../router";
 import { PatientRefills } from "../components/Refills";
 import { useI18n } from "../i18n";
+import SideTabs from "../components/SideTabs";
 
 const hhmm = (s) => s.slice(11, 16);
 const day = (s) => s.slice(0, 10);
@@ -23,11 +24,11 @@ export default function Patient({ tab: shownTab, setTab }) {
   const { t } = useI18n();
   return (
     <>
-      <nav className="tabs" role="tablist">
+      <SideTabs label="Patient sections">
         {[["overview", "Overview"], ["today", "Today & reminders"], ["calendar", "Calendar"], ["rx", "My prescriptions"], ["refills", "Refills"], ["appts", "Appointments"], ["notifications", "Notifications"]].map(([k, l]) => (
-          <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? "" : "secondary"} onClick={() => setTab(k)}>{t(l)}</button>
+          <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? "active" : ""} onClick={() => setTab(k)}>{t(l)}</button>
         ))}
-      </nav>
+      </SideTabs>
       {tab === "overview" ? <PatientOverview go={setTab} /> : tab === "today" ? <Reminders /> : tab === "calendar" ? <CareCalendar /> : tab === "rx" ? <Prescriptions /> : tab === "refills" ? <PatientRefills /> : tab === "appts" ? <Appointments role="PATIENT" /> : <NotificationList />}
     </>
   );

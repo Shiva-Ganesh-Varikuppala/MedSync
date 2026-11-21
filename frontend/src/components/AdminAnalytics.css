@@ -1,0 +1,63 @@
+/* Admin analytics: minimal. Hairlines, generous spacing, one accent colour. Works on top of the admin glass panels. */
+
+.am { display: grid; gap: 1.1rem; animation: rise .3s ease both; }
+
+/* Header */
+.am-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; padding: .2rem .15rem 0; }
+.am-head h2 { font-size: clamp(1.4rem, 2.4vw, 1.9rem); letter-spacing: -.025em; }
+.am-head p { margin: .3rem 0 0; color: var(--ink-soft); font-size: .92rem; }
+.am-live { display: inline-flex; align-items: center; gap: .45rem; font-size: .76rem; font-weight: 650; color: var(--ink-soft); padding: .32rem .7rem; border-radius: 99px; border: 1px solid var(--line); background: color-mix(in srgb, var(--surface) 55%, transparent); }
+.am-live i { width: 6px; height: 6px; border-radius: 50%; background: #2fb67c; box-shadow: 0 0 0 3px rgba(47, 182, 124, .16); }
+
+/* Key figures: one strip, divided by hairlines */
+.am-kpis { margin: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border: 1px solid var(--line); border-radius: 18px; overflow: hidden; background: color-mix(in srgb, var(--surface) 70%, transparent); -webkit-backdrop-filter: blur(20px) saturate(1.5); backdrop-filter: blur(20px) saturate(1.5); }
+.am-kpi { padding: 1.15rem 1.3rem; border-left: 1px solid var(--line); min-width: 0; }
+.am-kpi:first-child { border-left: 0; }
+.am-kpi dt { font-size: .72rem; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-soft); }
+.am-kpi dd { margin: .5rem 0 .15rem; font-family: var(--display); font-weight: 700; font-size: 2.1rem; line-height: 1; letter-spacing: -.03em; color: var(--ink); font-variant-numeric: tabular-nums; }
+.am-kpi:first-child dd { color: var(--indigo-deep); }
+.am-kpi small { color: var(--ink-soft); font-size: .78rem; }
+
+/* Panels */
+.am-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.1rem; }
+.am-grid .panel { min-width: 0; margin: 0; height: 100%; }
+.am-grid .panel > h2 { font-size: .8rem; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-soft); padding: 1rem 1.3rem .85rem; }
+.am-empty { padding: 1.2rem 1.3rem 1.4rem; margin: 0; }
+
+/* Charts, calmer: thin line, faint grid, no value bubble */
+.am .chart { max-height: 240px; }
+.am .chart path[stroke] { stroke-width: 2; }
+.am .chart-grid { stroke-opacity: .55; }
+.am .chart g:has(> .chart-bubble) { display: none; }
+.am .donut { min-height: 240px; padding: .4rem 1rem 1.2rem; gap: 2rem; }
+.am .donut-svg { width: 170px; height: 170px; }
+.am .donut-svg circle[stroke-width="26"] { stroke-width: 14; }
+.am .donut-center { font-size: 28px; font-weight: 700; }
+.am .legend { gap: .65rem; min-width: 150px; }
+.am .legend li { font-weight: 550; font-size: .9rem; }
+.am .legend i { width: 8px; height: 8px; }
+
+/* Lists: hairline rows instead of cards */
+.am-list { list-style: none; margin: 0; padding: 0 1.3rem .5rem; }
+.am-list li { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .85rem 0; border-top: 1px solid var(--line); }
+.am-list li:first-child { border-top: 0; }
+.am-list li > div { min-width: 0; flex: 1; display: grid; gap: .15rem; }
+.am-list strong { font-weight: 650; font-size: .95rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.am-list span { color: var(--ink-soft); font-size: .8rem; }
+.am-list b { font-family: var(--display); font-size: 1.05rem; font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.am-list b small { font-family: var(--body); font-size: .72rem; font-weight: 500; color: var(--ink-soft); }
+.am-bar { display: block; height: 4px; margin-top: .45rem; border-radius: 99px; background: color-mix(in srgb, var(--ink) 9%, transparent); overflow: hidden; }
+.am-bar i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #a58bff, var(--indigo)); }
+.am-note { margin: 0 .15rem; }
+
+@media (max-width: 980px) {
+  .am-grid { grid-template-columns: 1fr; }
+  .am-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .am-kpi:nth-child(3) { border-left: 0; }
+  .am-kpi:nth-child(n + 3) { border-top: 1px solid var(--line); }
+}
+@media (max-width: 560px) {
+  .am-head { flex-direction: column; align-items: flex-start; }
+  .am-kpi { padding: 1rem; }
+  .am-kpi dd { font-size: 1.7rem; }
+}

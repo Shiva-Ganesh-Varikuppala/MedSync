@@ -15,6 +15,8 @@ import SearchBox from "./components/SearchBox";
 import DialogHost from "./components/Dialog";
 import { usePath } from "./router";
 import { LanguageSwitcher, useI18n } from "./i18n";
+import Tour from "./components/Tour";
+import "./admin-glass.css";
 
 const TITLES = { DOCTOR: "Doctor workspace", PATIENT: "Patient care", PHARMACY_STAFF: "Pharmacy inventory", ADMIN: "Administration" };
 const ROLE_TEXT = { DOCTOR: "Doctor", PATIENT: "Patient", PHARMACY_STAFF: "Pharmacy staff", ADMIN: "Administrator" };
@@ -27,7 +29,8 @@ const Icon = ({ d }) => (
 const ICONS = {
   overview: "M3 3h7v9H3zM14 3h7v5h-7zM14 12h7v9h-7zM3 16h7v5H3z",
   profile: "M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z",
-  out: "M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"
+  out: "M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9",
+  help: "M9.1 9a3 3 0 0 1 5.8 1c0 2-3 2.5-3 4M12 17.5h.01M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z"
 };
 
 export default function App() {
@@ -46,12 +49,16 @@ export default function App() {
     <>
       <LoadingBar />
       <DialogHost />
-      <div className="app">
+      <Tour />
+      {role === "ADMIN" && <div className="glass-bg" aria-hidden="true"><span className="g1" /><span className="g2" /><span className="g3" /><span className="g4" /></div>}
+      <div className={`app role-${String(role).toLowerCase()}`}>
         <aside className="sidebar">
-          <div className="brand"><Brand size={32} /><span>MedSync</span></div>
+          <div className="brand"><Brand size={32} /></div>
+          <div id="side-tabs" />
           <nav className="nav" aria-label="Main">
             <button className={showProfile ? "" : "active"} onClick={() => navigate("")}><Icon d={ICONS.overview} />{t("Overview")}</button>
             <button className={showProfile ? "active" : ""} onClick={() => navigate("profile")}><Icon d={ICONS.profile} />{t("My profile")}</button>
+            <button onClick={() => window.dispatchEvent(new Event("medsync:tour"))}><Icon d={ICONS.help} />{t("Take a tour")}</button>
             <button onClick={() => { navigate(""); signOut(); }}><Icon d={ICONS.out} />{t("Sign out")}</button>
           </nav>
           <div className="promo">

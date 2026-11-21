@@ -11,6 +11,7 @@ import { confirmDialog } from "../components/Dialog";
 import { DoctorOverview } from "../components/Overview";
 import { pickTab } from "../router";
 import { DoctorRefills } from "../components/Refills";
+import SideTabs from "../components/SideTabs";
 
 const FREQUENCIES = [[1, "Once daily"], [2, "Twice daily"], [3, "Three times daily"], [4, "Four times daily"]];
 // Count of prescriptions per month for the last six months, oldest first.
@@ -34,11 +35,11 @@ export default function Doctor({ tab: shownTab, setTab }) {
   useGoto(setTab);
   return (
     <>
-      <nav className="tabs" role="tablist">
+      <SideTabs label="Doctor sections">
         {[["overview", "Overview"], ["patients", "Patients"], ["new", "New prescription"], ["mine", "My prescriptions"], ["refills", "Refills"], ["appts", "Appointments"], ["schedule", "Schedule"]].map(([k, label]) => (
-          <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? "" : "secondary"} onClick={() => { setTab(k); setFlash({}); }}>{label}</button>
+          <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? "active" : ""} onClick={() => { setTab(k); setFlash({}); }}>{label}</button>
         ))}
-      </nav>
+      </SideTabs>
       <Notice {...flash} />
       {patient && <p className="muted">Selected patient: <b>{patient.name}</b> (ID {patient.patient_id}) <button className="link" onClick={() => setPatient(null)}>clear</button></p>}
       {tab === "overview" && <DoctorOverview go={(k) => { setTab(k); setFlash({}); }} />}

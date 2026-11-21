@@ -1,0 +1,108 @@
+/* Glassmorphism for the administrator workspace.
+   Everything is scoped to .role-admin, so the other roles look exactly as before.
+   Note: the .app container itself has no blur. A blurred parent would stop its children from seeing the colourful
+   background behind them (browsers blur only what is inside such a parent), so each panel blurs the page on its own. */
+
+/* ── Colourful backdrop for the glass to blur ───────────── */
+.glass-bg { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
+.glass-bg span { position: absolute; border-radius: 50%; will-change: transform; }
+.glass-bg .g1 { width: 46vmax; height: 46vmax; left: -12vmax; top: -16vmax; background: radial-gradient(circle at 40% 40%, #b7a2ff, #7b5cf0 50%, transparent 70%); opacity: .6; animation: gbA 20s ease-in-out infinite; }
+.glass-bg .g2 { width: 38vmax; height: 38vmax; right: -10vmax; bottom: -14vmax; background: radial-gradient(circle at 40% 40%, #ffd0ae, #ff8a4c 52%, transparent 70%); opacity: .5; animation: gbB 24s ease-in-out infinite; }
+.glass-bg .g3 { width: 30vmax; height: 30vmax; right: 8vw; top: 6vh; background: radial-gradient(circle at 40% 40%, #a8e8ff, #4cc9f0 52%, transparent 70%); opacity: .36; animation: gbC 27s ease-in-out infinite; }
+.glass-bg .g4 { width: 26vmax; height: 26vmax; left: 30vw; bottom: -8vmax; background: radial-gradient(circle at 40% 40%, #ffc2e6, #f06bb6 52%, transparent 70%); opacity: .3; animation: gbA 30s ease-in-out -9s infinite reverse; }
+@keyframes gbA { 0%, 100% { transform: translate3d(0, 0, 0) scale(1); } 50% { transform: translate3d(8vmax, 6vmax, 0) scale(1.12); } }
+@keyframes gbB { 0%, 100% { transform: translate3d(0, 0, 0) scale(1); } 50% { transform: translate3d(-9vmax, -6vmax, 0) scale(1.1); } }
+@keyframes gbC { 0%, 100% { transform: translate3d(0, 0, 0) scale(1); } 50% { transform: translate3d(-8vmax, 9vmax, 0) scale(.9); } }
+:root[data-theme="dark"] .glass-bg .g1 { opacity: .4; }
+:root[data-theme="dark"] .glass-bg .g2 { opacity: .28; }
+:root[data-theme="dark"] .glass-bg .g3 { opacity: .2; }
+:root[data-theme="dark"] .glass-bg .g4 { opacity: .18; }
+
+/* ── The frame and the sidebar ──────────────────────────── */
+.app.role-admin {
+  background: linear-gradient(145deg, rgba(255, 255, 255, .22), rgba(255, 255, 255, .06));
+  border: 1px solid rgba(255, 255, 255, .65);
+  box-shadow: 0 40px 90px -40px rgba(60, 36, 150, .5), inset 0 1px 0 rgba(255, 255, 255, .8);
+}
+.role-admin .sidebar {
+  background: linear-gradient(180deg, rgba(255, 255, 255, .5), rgba(255, 255, 255, .2));
+  border-right: 1px solid rgba(255, 255, 255, .6);
+  -webkit-backdrop-filter: blur(26px) saturate(1.6); backdrop-filter: blur(26px) saturate(1.6);
+  box-shadow: inset -1px 0 0 rgba(255, 255, 255, .4);
+}
+.role-admin .nav button:hover:not(:disabled) { background: rgba(255, 255, 255, .5); }
+.role-admin .nav button.active, .role-admin .nav button.active:hover:not(:disabled) {
+  background: linear-gradient(180deg, rgba(255, 255, 255, .3), rgba(255, 255, 255, 0) 55%), linear-gradient(135deg, #a58bff, #7b5cf0);
+  box-shadow: 0 12px 24px -12px rgba(91, 63, 208, .8), inset 0 1px 0 rgba(255, 255, 255, .5);
+}
+.role-admin .promo { box-shadow: 0 18px 34px -20px rgba(91, 63, 208, .7), inset 0 1px 0 rgba(255, 255, 255, .45); border: 1px solid rgba(255, 255, 255, .35); }
+
+/* ── Cards and panels: the main glass recipe ────────────── */
+.role-admin .card, .role-admin .panel, .role-admin .tabs, .role-admin .usercard, .role-admin .search-pop, .role-admin .bell-menu {
+  background: linear-gradient(145deg, rgba(255, 255, 255, .62), rgba(255, 255, 255, .24));
+  border: 1px solid rgba(255, 255, 255, .72);
+  -webkit-backdrop-filter: blur(24px) saturate(1.6); backdrop-filter: blur(24px) saturate(1.6);
+  box-shadow: 0 26px 50px -30px rgba(60, 36, 150, .45), 0 2px 6px rgba(30, 27, 58, .05), inset 0 1px 0 rgba(255, 255, 255, .9), inset 0 0 30px rgba(255, 255, 255, .14);
+}
+.role-admin .panel > h2 { border-bottom: 1px solid rgba(255, 255, 255, .6); background: linear-gradient(180deg, rgba(255, 255, 255, .35), transparent); }
+.role-admin .tabs { border-radius: 18px; }
+.role-admin .tabs button { background: linear-gradient(180deg, rgba(255, 255, 255, .3), rgba(255, 255, 255, 0) 55%), linear-gradient(135deg, #a58bff, #7b5cf0); box-shadow: 0 10px 20px -10px rgba(91, 63, 208, .75), inset 0 1px 0 rgba(255, 255, 255, .5); }
+.role-admin .tabs button.secondary { background: transparent; box-shadow: none; }
+.role-admin .tabs button.secondary:hover:not(:disabled) { background: rgba(255, 255, 255, .55); }
+.role-admin .panel .tabs { background: rgba(255, 255, 255, .3); box-shadow: inset 0 1px 3px rgba(60, 36, 150, .1); border-color: rgba(255, 255, 255, .5); }
+
+/* ── Colourful tiles keep their colour and gain a glassy shine ── */
+.role-admin .stat-card, .role-admin .tile { border: 1px solid rgba(255, 255, 255, .4); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .55), inset 0 -10px 22px rgba(255, 255, 255, .06); }
+.role-admin .stat-card::before { content: ""; position: absolute; inset: 0; background: linear-gradient(160deg, rgba(255, 255, 255, .34), rgba(255, 255, 255, 0) 45%); pointer-events: none; }
+
+/* ── Rows, inputs and small controls: light translucency, no extra blur ── */
+.role-admin .row { background: rgba(255, 255, 255, .5); border: 1px solid rgba(255, 255, 255, .75); box-shadow: 0 8px 18px -12px rgba(60, 36, 150, .3), inset 0 1px 0 rgba(255, 255, 255, .8); }
+.role-admin .item { background: rgba(255, 255, 255, .4); }
+.role-admin input, .role-admin select, .role-admin textarea { background: rgba(255, 255, 255, .45); border: 1.5px solid rgba(255, 255, 255, .8); box-shadow: inset 0 2px 6px rgba(60, 36, 150, .07); }
+.role-admin input:hover, .role-admin select:hover, .role-admin textarea:hover { border-color: rgba(123, 92, 240, .45); }
+.role-admin input:focus, .role-admin select:focus, .role-admin textarea:focus { background: rgba(255, 255, 255, .8); border-color: var(--indigo); }
+.role-admin .theme-round, .role-admin .lang-select, .role-admin .searchbox input {
+  background: rgba(255, 255, 255, .5); border: 1px solid rgba(255, 255, 255, .75);
+  -webkit-backdrop-filter: blur(16px) saturate(1.5); backdrop-filter: blur(16px) saturate(1.5);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .85), 0 10px 22px -14px rgba(60, 36, 150, .45);
+}
+.role-admin button.secondary { background: rgba(255, 255, 255, .5); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .8); }
+.role-admin button.secondary:hover:not(:disabled) { background: rgba(255, 255, 255, .8); }
+.role-admin .badge { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .6); }
+
+/* Audit log table */
+.role-admin .audit-table th { border-bottom-color: rgba(255, 255, 255, .7); }
+.role-admin .audit-table td { border-bottom-color: rgba(255, 255, 255, .55); }
+.role-admin .audit-table tbody tr:hover { background: rgba(255, 255, 255, .5); }
+.role-admin .audit-wrap { border-radius: 14px; background: rgba(255, 255, 255, .25); }
+
+/* ── Dark mode ──────────────────────────────────────────── */
+:root[data-theme="dark"] .app.role-admin { background: linear-gradient(145deg, rgba(255, 255, 255, .05), rgba(255, 255, 255, .015)); border-color: rgba(255, 255, 255, .12); box-shadow: 0 40px 90px -40px rgba(0, 0, 0, .8), inset 0 1px 0 rgba(255, 255, 255, .12); }
+:root[data-theme="dark"] .role-admin .sidebar { background: linear-gradient(180deg, rgba(255, 255, 255, .09), rgba(255, 255, 255, .03)); border-right-color: rgba(255, 255, 255, .1); box-shadow: inset -1px 0 0 rgba(255, 255, 255, .05); }
+:root[data-theme="dark"] .role-admin .nav button:hover:not(:disabled) { background: rgba(255, 255, 255, .08); }
+:root[data-theme="dark"] .role-admin .card, :root[data-theme="dark"] .role-admin .panel, :root[data-theme="dark"] .role-admin .tabs, :root[data-theme="dark"] .role-admin .usercard, :root[data-theme="dark"] .role-admin .search-pop, :root[data-theme="dark"] .role-admin .bell-menu {
+  background: linear-gradient(145deg, rgba(255, 255, 255, .11), rgba(255, 255, 255, .03));
+  border-color: rgba(255, 255, 255, .14);
+  box-shadow: 0 30px 60px -32px rgba(0, 0, 0, .75), 0 2px 6px rgba(0, 0, 0, .25), inset 0 1px 0 rgba(255, 255, 255, .22), inset 0 0 30px rgba(255, 255, 255, .03);
+}
+:root[data-theme="dark"] .role-admin .panel > h2 { border-bottom-color: rgba(255, 255, 255, .1); background: linear-gradient(180deg, rgba(255, 255, 255, .06), transparent); }
+:root[data-theme="dark"] .role-admin .tabs button.secondary:hover:not(:disabled) { background: rgba(255, 255, 255, .09); }
+:root[data-theme="dark"] .role-admin .panel .tabs { background: rgba(255, 255, 255, .05); border-color: rgba(255, 255, 255, .08); box-shadow: inset 0 1px 3px rgba(0, 0, 0, .3); }
+:root[data-theme="dark"] .role-admin .stat-card, :root[data-theme="dark"] .role-admin .tile { border-color: rgba(255, 255, 255, .22); }
+:root[data-theme="dark"] .role-admin .row { background: rgba(255, 255, 255, .05); border-color: rgba(255, 255, 255, .1); box-shadow: 0 8px 18px -12px rgba(0, 0, 0, .6), inset 0 1px 0 rgba(255, 255, 255, .06); }
+:root[data-theme="dark"] .role-admin .item { background: rgba(255, 255, 255, .04); }
+:root[data-theme="dark"] .role-admin input, :root[data-theme="dark"] .role-admin select, :root[data-theme="dark"] .role-admin textarea { background: rgba(255, 255, 255, .06); border-color: rgba(255, 255, 255, .14); box-shadow: inset 0 2px 8px rgba(0, 0, 0, .3); }
+:root[data-theme="dark"] .role-admin input:hover, :root[data-theme="dark"] .role-admin select:hover, :root[data-theme="dark"] .role-admin textarea:hover { border-color: rgba(155, 130, 255, .55); }
+:root[data-theme="dark"] .role-admin input:focus, :root[data-theme="dark"] .role-admin select:focus, :root[data-theme="dark"] .role-admin textarea:focus { background: rgba(255, 255, 255, .1); border-color: var(--indigo); }
+:root[data-theme="dark"] .role-admin .theme-round, :root[data-theme="dark"] .role-admin .lang-select, :root[data-theme="dark"] .role-admin .searchbox input { background: rgba(255, 255, 255, .07); border-color: rgba(255, 255, 255, .15); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .12); }
+:root[data-theme="dark"] .role-admin button.secondary { background: rgba(255, 255, 255, .08); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .1); color: var(--indigo-deep); }
+:root[data-theme="dark"] .role-admin button.secondary:hover:not(:disabled) { background: rgba(255, 255, 255, .14); }
+:root[data-theme="dark"] .role-admin .audit-table th, :root[data-theme="dark"] .role-admin .audit-table td { border-bottom-color: rgba(255, 255, 255, .08); }
+:root[data-theme="dark"] .role-admin .audit-table tbody tr:hover { background: rgba(255, 255, 255, .06); }
+:root[data-theme="dark"] .role-admin .audit-wrap { background: rgba(255, 255, 255, .03); }
+
+@media (max-width: 980px) {
+  .app.role-admin { border-radius: 0; }
+  .role-admin .sidebar { border-right: 0; border-bottom: 1px solid rgba(255, 255, 255, .5); }
+}
+@media (prefers-reduced-motion: reduce) { .glass-bg span { animation: none !important; } }

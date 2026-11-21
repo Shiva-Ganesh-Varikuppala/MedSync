@@ -53,7 +53,7 @@ export default function VerifyEmail() {
     <main className="auth">
       <ThemeToggle floating />
       <section className="hero">
-        <div className="brand"><Brand size={34} /><span>MedSync</span></div>
+        <div className="brand"><Brand size={34} /></div>
         <h1>Medication care, <em>in sync.</em></h1>
       </section>
       <section className="card form" aria-live="polite">
