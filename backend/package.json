@@ -9,6 +9,8 @@
     "db:setup-test": "node scripts/setupTestDb.js",
     "db:migrate": "node scripts/migrate.js",
     "smtp:check": "node scripts/checkSmtp.js",
+    "ml:seed-demo": "node scripts/seedAdherenceDemo.js",
+    "ml:train": "node scripts/trainRiskModel.js",
     "db:set-password": "node scripts/setUserPassword.js",
     "dev:passwords": "node scripts/setDevPasswords.js",
     "test": "node --test test/*.test.js"

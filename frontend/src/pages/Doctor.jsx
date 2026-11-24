@@ -12,6 +12,7 @@ import { DoctorOverview } from "../components/Overview";
 import { pickTab } from "../router";
 import { DoctorRefills } from "../components/Refills";
 import SideTabs from "../components/SideTabs";
+import AdherenceRisk from "../components/AdherenceRisk";
 
 const FREQUENCIES = [[1, "Once daily"], [2, "Twice daily"], [3, "Three times daily"], [4, "Four times daily"]];
 // Count of prescriptions per month for the last six months, oldest first.
@@ -25,7 +26,7 @@ const today = () => new Date().toISOString().slice(0, 10);
 const addDays = (d, n) => { const x = new Date(`${d}T00:00:00Z`); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
 const newItem = (m) => ({ key: Math.random(), medicine_id: m.medicine_id, label: `${m.name} ${m.strength || ""}`.trim(), dosage: "", frequency_per_day: 1, start_date: today(), end_date: addDays(today(), 6) });
 
-const TAB_KEYS = ["overview", "patients", "new", "mine", "refills", "appts", "schedule"];
+const TAB_KEYS = ["overview", "patients", "adherence", "new", "mine", "refills", "appts", "schedule"];
 
 // The open tab comes from the address bar (see router.js).
 export default function Doctor({ tab: shownTab, setTab }) {
@@ -36,7 +37,7 @@ export default function Doctor({ tab: shownTab, setTab }) {
   return (
     <>
       <SideTabs label="Doctor sections">
-        {[["overview", "Overview"], ["patients", "Patients"], ["new", "New prescription"], ["mine", "My prescriptions"], ["refills", "Refills"], ["appts", "Appointments"], ["schedule", "Schedule"]].map(([k, label]) => (
+        {[["overview", "Overview"], ["patients", "Patients"], ["adherence", "Adherence risk"], ["new", "New prescription"], ["mine", "My prescriptions"], ["refills", "Refills"], ["appts", "Appointments"], ["schedule", "Schedule"]].map(([k, label]) => (
           <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? "active" : ""} onClick={() => { setTab(k); setFlash({}); }}>{label}</button>
         ))}
       </SideTabs>
@@ -44,6 +45,7 @@ export default function Doctor({ tab: shownTab, setTab }) {
       {patient && <p className="muted">Selected patient: <b>{patient.name}</b> (ID {patient.patient_id}) <button className="link" onClick={() => setPatient(null)}>clear</button></p>}
       {tab === "overview" && <DoctorOverview go={(k) => { setTab(k); setFlash({}); }} />}
       {tab === "patients" && <Patients patient={patient} choose={(p) => { setPatient(p); }} startRx={() => setTab("new")} />}
+      {tab === "adherence" && <AdherenceRisk onOpen={(p) => { setPatient({ patient_id: p.patient_id, name: p.name }); setTab("patients"); }} />}
       {tab === "new" && <NewPrescription patient={patient} goPatients={() => setTab("patients")} done={(msg) => { setFlash({ success: msg }); setTab("mine"); }} />}
       {tab === "mine" && <Mine setFlash={setFlash} />}
       {tab === "refills" && <DoctorRefills />}

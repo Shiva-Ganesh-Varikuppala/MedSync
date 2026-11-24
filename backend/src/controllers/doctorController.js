@@ -4,6 +4,7 @@ const { likeEscape, pagination, toInt, toText } = require("../utils/validate");
 const { writeAudit } = require("../utils/audit");
 const prescriptions = require("../services/prescriptionService");
 const { currentMedicines } = require("../services/patientMedicineService");
+const risk = require("../services/riskService");
 
 async function me(req, res) {
     const [rows] = await pool.execute("SELECT d.doctor_id, u.user_id, u.name, u.email, u.phone, d.license_number, d.specialization FROM doctors d JOIN users u ON u.user_id = d.user_id WHERE d.doctor_id = ?", [req.user.doctorId]);
@@ -44,5 +45,11 @@ async function patientCurrentMedicines(req, res) {
     await writeAudit({ userId: req.user.id, action: "PATIENT_MEDICINES_VIEW", entityType: "patient", entityId: patientId, ip: req.ip });
     res.json({ success: true, message: "Current medicines retrieved successfully", data });
 }
+// Patients of this doctor ranked by the estimated risk of poor adherence over the next 7 days. Advisory only.
+async function atRisk(req, res) {
+    const data = await risk.atRiskForDoctor(req.user.doctorId);
+    await writeAudit({ userId: req.user.id, action: "RISK_LIST_VIEW", entityType: "doctor", entityId: req.user.doctorId, ip: req.ip });
+    res.json({ success: true, message: "Adherence risk retrieved successfully", data });
+}
 async function myPrescriptions(req, res) { res.json({ success: true, message: "Prescriptions retrieved successfully", data: await prescriptions.forDoctor(req.user.doctorId) }); }
-module.exports = { me, myPrescriptions, patient, patientCurrentMedicines, patientPrescriptions, patients };
+module.exports = { atRisk, me, myPrescriptions, patient, patientCurrentMedicines, patientPrescriptions, patients };

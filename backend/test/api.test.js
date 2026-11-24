@@ -1853,3 +1853,87 @@ test("audit log viewer: admin only, filters, paging, no free-text details", asyn
     const f = (await call("GET", "/api/admin/audit/facets", { as: "auditadmin" })).json.data;
     assert.ok(f.actions.includes("LOGIN") && Array.isArray(f.entity_types));
 });
+
+test("adherence risk: access control, starter model, refusing to train on too little data, training and the doctor's ranking", async () => {
+    const [[adm]] = await pool.query("SELECT email FROM users WHERE role = 'ADMIN' LIMIT 1");
+    await login("riskadmin", adm.email);
+    // who may call what
+    assert.equal((await call("GET", "/api/doctors/me/at-risk")).status, 401);
+    for (const who of ["pat1", "staff1", "riskadmin"]) assert.equal((await call("GET", "/api/doctors/me/at-risk", { as: who })).status, 403, who);
+    for (const [method, url] of [["GET", "/api/admin/risk/model"], ["POST", "/api/admin/risk/train"]]) {
+        assert.equal((await call(method, url)).status, 401, url);
+        for (const who of ["doc", "pat1", "staff1"]) assert.equal((await call(method, url, { as: who })).status, 403, `${who} ${url}`);
+    }
+
+    // before any training the starter model is used; every row is well formed
+    const levels = ["LOW", "MEDIUM", "HIGH", "UNKNOWN"];
+    const first = await call("GET", "/api/doctors/me/at-risk", { as: "doc" });
+    assert.equal(first.status, 200, JSON.stringify(first.json));
+    assert.equal(first.json.data.model.source, "starter");
+    for (const p of first.json.data.items) {
+        assert.ok(levels.includes(p.level));
+        assert.ok(p.risk === null || (p.risk >= 0 && p.risk <= 1));
+        assert.ok(Array.isArray(p.reasons) && p.reasons.length <= 3);
+    }
+
+    // the sample data has far too little history to learn from: the server says so instead of saving a useless model
+    const none = await call("POST", "/api/admin/risk/train", { as: "riskadmin" });
+    assert.equal(none.status, 200, JSON.stringify(none.json));
+    assert.equal(none.json.data.trained, false);
+    assert.equal(typeof none.json.data.reason, "string");
+
+    // add made-up patients with 75 days of history for doctor 1, then train on them
+    const { mulberry32, generatePatient } = require("../src/ml/synthetic");
+    const { parseTs } = require("../src/ml/adherenceFeatures");
+    const [[{ doctor_id }]] = await pool.query("SELECT d.doctor_id FROM doctors d JOIN users u ON u.user_id = d.user_id WHERE u.email = 'ananya.rao@medsync.dev'");
+    const [[med]] = await pool.query("SELECT medicine_id FROM medicines WHERE is_active = 1 LIMIT 1");
+    const [[nowRow]] = await pool.query("SELECT NOW() AS n");
+    const endMs = parseTs(nowRow.n);
+    const stamp = (ms) => new Date(ms).toISOString().slice(0, 19).replace("T", " ");
+    const rng = mulberry32(99);
+    for (let i = 0; i < 30; i++) {
+        const p = generatePatient(rng, { days: 75, endMs });
+        const [u] = await pool.query("INSERT INTO users (name, email, password_hash, role, is_active, email_verified_at) VALUES (?, ?, 'x', 'PATIENT', 1, NOW())", [`Risk Demo ${i} (demo)`, `risk.demo.${i}@medsync.demo`]);
+        const [pt] = await pool.query("INSERT INTO patients (user_id, date_of_birth, gender) VALUES (?, ?, 'Other')", [u.insertId, `${new Date(endMs).getUTCFullYear() - p.ageYears}-06-15`]);
+        const [rx] = await pool.query("INSERT INTO prescriptions (doctor_id, patient_id, prescription_date, diagnosis, status) VALUES (?, ?, ?, 'Demo', 'ACTIVE')", [doctor_id, pt.insertId, stamp(endMs - 76 * 864e5).slice(0, 10)]);
+        const itemIds = [];
+        for (const f of p.freqs) {
+            const [it] = await pool.query("INSERT INTO prescription_items (prescription_id, medicine_id, dosage, frequency, start_date, end_date, frequency_per_day) VALUES (?, ?, '1 tablet', 'demo', ?, ?, ?)", [rx.insertId, med.medicine_id, stamp(endMs - 76 * 864e5).slice(0, 10), stamp(endMs + 14 * 864e5).slice(0, 10), f]);
+            itemIds.push(it.insertId);
+        }
+        const rows = p.doses.map((d) => [itemIds[d.item], stamp(d.t), d.status, stamp(d.answered)]);
+        for (let o = 0; o < rows.length; o += 500) await pool.query("INSERT INTO reminders (prescription_item_id, scheduled_at, status, status_updated_at) VALUES ?", [rows.slice(o, o + 500)]);
+    }
+    const trained = await call("POST", "/api/admin/risk/train", { as: "riskadmin" });
+    assert.equal(trained.status, 200, JSON.stringify(trained.json));
+    assert.equal(trained.json.data.trained, true, trained.json.data.reason);
+    assert.ok(trained.json.data.metrics.auc > 0.75, `AUC ${trained.json.data.metrics.auc}`);
+    const overview = (await call("GET", "/api/admin/risk/model", { as: "riskadmin" })).json.data;
+    assert.equal(overview.source, "trained");
+    assert.ok(overview.metrics.n_test > 0 && overview.trained_models >= 1);
+
+    // the doctor now sees those patients, riskiest first, scored by the trained model
+    const list = await call("GET", "/api/doctors/me/at-risk", { as: "doc" });
+    assert.equal(list.status, 200, JSON.stringify(list.json));
+    const d = list.json.data;
+    assert.equal(d.model.source, "trained");
+    const demo = d.items.filter((p) => /\(demo\)$/.test(p.name));
+    assert.equal(demo.length, 30);
+    const scored = d.items.filter((p) => p.risk !== null);
+    assert.ok(scored.every((p, i) => i === 0 || p.risk <= scored[i - 1].risk), "highest risk first");
+    assert.ok(d.items.slice(scored.length).every((p) => p.risk === null), "patients without a score come last");
+    assert.equal(d.summary.high + d.summary.medium + d.summary.low + d.summary.unknown, d.items.length);
+    assert.ok(scored.every((p) => p.level === (p.risk >= 0.6 ? "HIGH" : p.risk >= 0.35 ? "MEDIUM" : "LOW")));
+    assert.ok(d.summary.high >= 1 && d.summary.low >= 1, "the made-up group contains both reliable and unreliable patients");
+    // a reliable patient gets no alarming reasons; an unreliable one gets explanations
+    assert.ok(scored.filter((p) => p.level === "HIGH").every((p) => p.reasons.length >= 1));
+
+    // another doctor never sees these patients
+    const other = await call("GET", "/api/doctors/me/at-risk", { as: "doc2" });
+    assert.equal(other.status, 200);
+    assert.equal(other.json.data.items.filter((p) => /\(demo\)$/.test(p.name)).length, 0);
+
+    // viewing the list is recorded in the audit log
+    const [[viewed]] = await pool.query("SELECT COUNT(*) AS n FROM audit_logs WHERE action = 'RISK_LIST_VIEW'");
+    assert.ok(viewed.n >= 2);
+});

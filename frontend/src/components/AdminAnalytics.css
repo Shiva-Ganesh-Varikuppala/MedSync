@@ -23,6 +23,7 @@
 .am-grid .panel { min-width: 0; margin: 0; height: 100%; }
 .am-grid .panel > h2 { font-size: .8rem; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-soft); padding: 1rem 1.3rem .85rem; }
 .am-empty { padding: 1.2rem 1.3rem 1.4rem; margin: 0; }
+.am-grid.am-single { grid-template-columns: 1fr; }
 
 /* Charts, calmer: thin line, faint grid, no value bubble */
 .am .chart { max-height: 240px; }

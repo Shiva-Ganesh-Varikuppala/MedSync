@@ -3,6 +3,7 @@ const c = require("../controllers/adminController");
 const cronService = require("../services/cronService");
 const messageSender = require("../services/messageSender");
 const analytics = require("../services/analyticsService");
+const risk = require("../services/riskService");
 const pool = require("../config/database");
 const { HttpError, badRequest } = require("../utils/httpError");
 const { authenticate, requireRole } = require("../middleware/auth");
@@ -13,6 +14,12 @@ router.use(authenticate, requireRole("ADMIN"));
 
 router.get("/summary", asyncHandler(c.summary));
 router.get("/analytics", asyncHandler(async (req, res) => res.json({ success: true, message: "Analytics", data: await analytics.overview() })));
+// Adherence risk model: what is in use and how it tested, and a button to learn a new one from the reminder history.
+router.get("/risk/model", asyncHandler(async (req, res) => res.json({ success: true, message: "Risk model", data: await risk.modelOverview() })));
+router.post("/risk/train", asyncHandler(async (req, res) => {
+    const data = await risk.trainModel(req.user.id);
+    res.json({ success: true, message: data.trained ? "Model trained" : "Model not trained", data });
+}));
 router.get("/audit", asyncHandler(c.listAudit));
 router.get("/audit/facets", asyncHandler(c.auditFacets));
 router.get("/users", asyncHandler(c.listUsers));

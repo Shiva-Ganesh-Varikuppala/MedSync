@@ -3,13 +3,15 @@
 ## Run locally
 
 1. Create `backend/.env` from `.env.example`, setting the database login and a JWT secret of at least 32 characters.
-2. Apply `database/schema`, `database/seeds`, then **all** files in `database/migrations/` in order (001 to 016), or simply run `npm run db:migrate -- --seed`. Run `npm run db:migrate` again after pulling new code.
+2. Apply `database/schema`, `database/seeds`, then **all** files in `database/migrations/` in order (001 to 017), or simply run `npm run db:migrate -- --seed`. Run `npm run db:migrate` again after pulling new code.
 3. Run `npm install` and `npm run dev` (or `npm start`). The default API address is `http://localhost:5001/api`.
 4. Development only: `npm run dev:passwords` sets every seed user's password to `Test@12345`.
 
 Tip: to keep a local database apart from a cloud one, put the local settings in `.env.local` and start with `node --env-file=.env.local src/server.js`; run the tests with `node --env-file=.env.local --test test/*.test.js`.
 
 Background jobs (marking missed doses, sending due reminders) start with the server and run every minute. An administrator can also run them on demand.
+
+Scripts: `npm run ml:seed-demo` adds synthetic patients with dose history (local databases only), `npm run ml:train` trains the adherence-risk model from the command line. `node --test test/risk.test.js` runs the model's own tests without a database.
 
 ## Conventions
 
@@ -23,7 +25,7 @@ Background jobs (marking missed doses, sending due reminders) start with the ser
 
 **Auth** `/auth`: `POST /register` (patients only), `POST /login` (5 failures per 15 minutes are blocked), `POST /refresh`, `POST /logout`, `GET /me`, `PUT /me`, `PUT /password`.
 
-**Doctor** `/doctors` (role DOCTOR): `GET /me`, `GET /me/prescriptions`, `GET /patients?q=&limit=&page=`, `GET /patients/:id`, `GET /patients/:id/current-medicines`, `GET /patients/:id/prescriptions`.
+**Doctor** `/doctors` (role DOCTOR): `GET /me`, `GET /me/prescriptions`, `GET /patients?q=&limit=&page=`, `GET /patients/:id`, `GET /patients/:id/current-medicines`, `GET /patients/:id/prescriptions`, `GET /me/at-risk` (own patients with a current prescription, ranked by estimated risk of poor adherence over the next 7 days; advisory, see `docs/ADHERENCE_RISK.md`).
 
 **Prescriptions** `/prescriptions`: `POST /` (doctor), `POST /:id/cancel` (doctor), `GET /:id`, `GET /:id/items`.
 
@@ -47,7 +49,7 @@ Other route groups (email and phone verification, attachments, prescription temp
 
 **Search** `GET /api/search?q=` (2+ characters, any signed-in role): results are limited to what that role may see.
 
-**Admin** `/admin` (role ADMIN): `GET /summary`, `GET /analytics`, `GET /audit?q=&action=&entity_type=&user_id=&from=&to=&limit=&page=` (newest first; free-text details are never returned), `GET /audit/facets`, `GET /users?q=&role=&limit=&page=`, `POST /users` (doctor or pharmacy staff), `PATCH /users/:id/active`, `POST /users/:id/password`, `DELETE /users/:id` (needs `confirm_email`; permanent), `POST /pharmacies`, `POST /cron/run`, `GET /delivery`, `POST /delivery/test` (`channel` is EMAIL or SMS; sends to the admin's own address or phone).
+**Admin** `/admin` (role ADMIN): `GET /summary`, `GET /analytics`, `GET /audit?q=&action=&entity_type=&user_id=&from=&to=&limit=&page=` (newest first; free-text details are never returned), `GET /audit/facets`, `GET /risk/model` and `POST /risk/train` (adherence-risk model: test results, and learn a new model from the reminder history; training is refused when there is too little data), `GET /users?q=&role=&limit=&page=`, `POST /users` (doctor or pharmacy staff), `PATCH /users/:id/active`, `POST /users/:id/password`, `DELETE /users/:id` (needs `confirm_email`; permanent), `POST /pharmacies`, `POST /cron/run`, `GET /delivery`, `POST /delivery/test` (`channel` is EMAIL or SMS; sends to the admin's own address or phone).
 
 ## Email and SMS
 

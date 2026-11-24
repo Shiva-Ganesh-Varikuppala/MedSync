@@ -1,0 +1,48 @@
+/* Adherence risk (doctor) and the model panel (admin). Minimal: hairlines, one accent, colour only where it carries meaning. */
+.ar { display: grid; gap: 1.1rem; animation: rise .3s ease both; }
+.ar-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; flex-wrap: wrap; padding: .2rem .15rem 0; }
+.ar-head h2 { font-size: clamp(1.4rem, 2.4vw, 1.9rem); letter-spacing: -.025em; }
+.ar-head p { margin: .3rem 0 0; color: var(--ink-soft); font-size: .92rem; max-width: 560px; }
+.ar-model { font-size: .76rem; font-weight: 650; padding: .35rem .75rem; border-radius: 99px; border: 1px solid var(--line); color: var(--ink-soft); background: color-mix(in srgb, var(--surface) 55%, transparent); }
+.ar-model.trained { color: var(--indigo-deep); border-color: color-mix(in srgb, var(--indigo) 35%, var(--line)); }
+
+.ar-chips { display: flex; gap: .4rem; flex-wrap: wrap; }
+.ar-chips button { display: inline-flex; align-items: center; gap: .45rem; padding: .42rem .85rem; border-radius: 99px; font-size: .85rem; background: color-mix(in srgb, var(--surface) 60%, transparent); color: var(--ink-soft); border: 1px solid var(--line); box-shadow: none; }
+.ar-chips button:hover:not(:disabled) { background: var(--tint); color: var(--indigo-deep); transform: none; box-shadow: none; }
+.ar-chips button.on, .ar-chips button.on:hover:not(:disabled) { background: var(--indigo); border-color: var(--indigo); color: #fff; }
+.ar-chips b { font-size: .75rem; opacity: .85; }
+
+.ar-list { list-style: none; margin: 0; padding: 0; display: grid; gap: .7rem; }
+.ar-row { --lv: #9aa0b4; display: flex; justify-content: space-between; gap: 1rem; padding: 1rem 1.15rem; border: 1px solid var(--line); border-left: 4px solid var(--lv); border-radius: 16px; background: color-mix(in srgb, var(--surface) 72%, transparent); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); }
+.ar-row.high { --lv: #e5484d; }
+.ar-row.medium { --lv: #f0b429; }
+.ar-row.low { --lv: #2fb67c; }
+.ar-main { min-width: 0; flex: 1; display: grid; gap: .5rem; }
+.ar-title { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
+.ar-title strong { font-size: 1.02rem; }
+.ar-pill { font-size: .7rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; padding: .18rem .55rem; border-radius: 99px; color: var(--lv); background: color-mix(in srgb, var(--lv) 14%, transparent); }
+.ar-meter { height: 6px; max-width: 360px; border-radius: 99px; background: color-mix(in srgb, var(--ink) 9%, transparent); overflow: hidden; }
+.ar-meter i { display: block; height: 100%; border-radius: inherit; background: var(--lv); }
+.ar-reasons { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: .4rem; }
+.ar-reasons li { font-size: .8rem; padding: .22rem .6rem; border-radius: 99px; background: color-mix(in srgb, var(--ink) 6%, transparent); color: var(--ink); }
+.ar-why { margin: 0; font-size: .86rem; }
+.ar-stats { margin: 0; font-size: .8rem; color: var(--ink-soft); }
+.ar-side { display: flex; flex-direction: column; align-items: flex-end; justify-content: space-between; gap: .6rem; flex-shrink: 0; }
+.ar-score { text-align: right; line-height: 1; }
+.ar-score b { display: block; font-family: var(--display); font-size: 2rem; font-weight: 700; letter-spacing: -.03em; color: var(--lv); font-variant-numeric: tabular-nums; }
+.ar-score small { color: var(--ink-soft); font-size: .72rem; }
+.ar-empty { padding: 1rem .2rem; }
+.ar-note { margin: 0 .15rem; max-width: 720px; }
+
+/* Admin: model panel inside Analytics */
+.am-model { padding: 0 1.3rem 1.2rem; display: grid; gap: 1rem; }
+.am-model-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: .8rem 1.2rem; margin: 0; }
+.am-model-stats div { min-width: 0; }
+.am-model-stats dt { font-size: .7rem; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-soft); }
+.am-model-stats dd { margin: .2rem 0 0; font-family: var(--display); font-size: 1.35rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.am-model-note { margin: 0; color: var(--ink-soft); font-size: .84rem; max-width: 720px; }
+
+@media (max-width: 640px) {
+  .ar-row { flex-direction: column; }
+  .ar-side { flex-direction: row; align-items: center; justify-content: space-between; }
+}
