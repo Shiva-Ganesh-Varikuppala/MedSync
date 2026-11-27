@@ -72,7 +72,7 @@ You need Node 20+ and MySQL 8.
 
 Reminders and notices always appear inside the app. To also send them by email or text, add the settings listed in `backend/.env.example` (`SMTP_*` for email, `TWILIO_*` for SMS) and restart the backend. In the admin screen, **Automation → Email and SMS** shows what is switched on and can send you a test message.
 
-## Demo accounts (password `Test@12345` after `npm run dev:passwords`)
+## Demo accounts (password `Test@12345` after executing `npm run dev:passwords`)
 
 | Role | Email |
 |---|---|
